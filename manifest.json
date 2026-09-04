@@ -1,0 +1,16 @@
+{
+  "name": "珠珠能量宝瓶",
+  "short_name": "能量宝瓶",
+  "description": "记录珠珠每日能量增减的成长宝瓶",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e0a22",
+  "theme_color": "#0e0a22",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
