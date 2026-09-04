@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-70 -100 340 540">
+  <defs>
+    <linearGradient id="rain" gradientUnits="userSpaceOnUse" x1="0" y1="16" x2="0" y2="346">
+      <stop offset="0" stop-color="hsl(285 100% 62%)"/>
+      <stop offset=".17" stop-color="hsl(262 100% 60%)"/>
+      <stop offset=".33" stop-color="hsl(210 100% 58%)"/>
+      <stop offset=".5" stop-color="hsl(130 90% 56%)"/>
+      <stop offset=".67" stop-color="hsl(58 100% 56%)"/>
+      <stop offset=".83" stop-color="hsl(30 100% 58%)"/>
+      <stop offset="1" stop-color="hsl(0 100% 58%)"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a8d465"/><stop offset="1" stop-color="#5c8f2e"/>
+    </linearGradient>
+    <radialGradient id="gloss" gradientUnits="objectBoundingBox" cx=".36" cy=".58" r=".55" fx=".32" fy=".53">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".4"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#d9c8ff" stop-opacity=".3"/><stop offset=".7" stop-color="#d9c8ff" stop-opacity=".1"/><stop offset="1" stop-color="#d9c8ff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="clip"><path d="M95 -7 C95 -9.8 105 -9.8 105 -7 C105 -2 105 4 105 10.3 C124.9 12.8 140 29.9 140 50 C140 66.4 130 81.2 114.7 87.2 C149.3 93 174 118.9 174 149 C174 183.8 140.9 212 100 212 C59.1 212 26 183.8 26 149 C26 118.9 50.7 93 85.3 87.2 C70 81.2 60 66.4 60 50 C60 29.9 75.1 12.8 95 10.3 C95 4 95 -2 95 -7 Z"/></clipPath>
+  </defs>
+  <ellipse cx="100" cy="102" rx="150" ry="215" fill="url(#glow)"/>
+  <path d="M-30 -24 C60 -20 140 -14 250 -30" fill="none" stroke="#4a7a26" stroke-width="14" stroke-linecap="round"/>
+  <path d="M-30 -24 C60 -20 140 -14 250 -30" fill="none" stroke="#7aad40" stroke-width="8" stroke-linecap="round"/>
+  <path d="M140 -14 C162 -22 170 -4 158 4 C148 12 136 8 140 -4" fill="none" stroke="#7aad40" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M96 -18 C68 -32 54 -58 74 -70 C94 -82 118 -58 110 -30 C105 -11 100 -10 96 -18 Z" fill="url(#leaf)"/>
+  <path d="M104 -18 C132 -32 146 -58 126 -70 C106 -82 82 -58 90 -30 C95 -11 100 -10 104 -18 Z" fill="url(#leaf)"/>
+  <path d="M28 -26 C12 -36 6 -54 20 -62 C36 -70 48 -52 44 -36 C41 -25 34 -24 28 -26 Z" fill="url(#leaf)" opacity=".95"/>
+  <path d="M100 -11 C99.5 -12 100.5 -13 100 -14" fill="none" stroke="#6f9e3a" stroke-width="7" stroke-linecap="round"/>
+  <g clip-path="url(#clip)">
+    <rect x="0" y="10" width="200" height="202" fill="url(#rain)"/>
+  </g>
+  <path d="M95 -7 C95 -9.8 105 -9.8 105 -7 C105 -2 105 4 105 10.3 C124.9 12.8 140 29.9 140 50 C140 66.4 130 81.2 114.7 87.2 C149.3 93 174 118.9 174 149 C174 183.8 140.9 212 100 212 C59.1 212 26 183.8 26 149 C26 118.9 50.7 93 85.3 87.2 C70 81.2 60 66.4 60 50 C60 29.9 75.1 12.8 95 10.3 C95 4 95 -2 95 -7 Z" fill="url(#gloss)"/>
+  <path d="M95 -7 C95 -9.8 105 -9.8 105 -7 C105 -2 105 4 105 10.3 C124.9 12.8 140 29.9 140 50 C140 66.4 130 81.2 114.7 87.2 C149.3 93 174 118.9 174 149 C174 183.8 140.9 212 100 212 C59.1 212 26 183.8 26 149 C26 118.9 50.7 93 85.3 87.2 C70 81.2 60 66.4 60 50 C60 29.9 75.1 12.8 95 10.3 C95 4 95 -2 95 -7 Z" fill="none" stroke="#c9bdf0" stroke-width="2.2" opacity=".6"/>
+</svg>
