@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="能量宝瓶">
+<meta name="theme-color" content="#0e0a22">
+<title>珠珠能量宝瓶</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<style>
+:root{
+  --paper:#f7f3ec; --ink:#3a3156; --ink2:#8f86ad;
+  --line:#e5dcf5; --primary:#7a5fd0;
+  --plus:#2e9e5b; --minus:#d64545;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#0e0a22;color:var(--ink)}
+button{font-family:inherit;cursor:pointer}
+.page{position:fixed;inset:0;display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--paper);padding-bottom:calc(80px + env(safe-area-inset-bottom))}
+.page.active{display:block}
+
+/* ============ 首页：藤上葫芦 + 昼夜背景 ============ */
+#page-home{background:transparent;overflow:hidden;padding-bottom:0}
+#stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#120c2c;overflow:hidden}
+#stage.day{background:linear-gradient(180deg,#7ec4ff 0%,#bfe6ff 48%,#eef9ff 100%)}
+#stage.night{background:radial-gradient(480px 480px at 50% 58%, #3b2a72 0%, #1d1440 60%, #120c2c 100%)}
+#stars,#fireflies{position:absolute;inset:0}
+.star{position:absolute;border-radius:50%;background:#fff;box-shadow:0 0 6px 1px rgba(255,235,180,.8);animation:tw 3s infinite;display:none}
+#stage.night .star{display:block}
+@keyframes tw{0%,100%{opacity:.15}50%{opacity:.9}}
+.fly{position:absolute;width:5px;height:5px;border-radius:50%;background:#d9ff9e;box-shadow:0 0 8px 3px rgba(217,255,158,.55);display:none;animation:fly ease-in-out infinite alternate}
+#stage.night .fly{display:block}
+@keyframes fly{from{transform:translate(0,6px);opacity:.15}to{transform:translate(16px,-30px);opacity:.95}}
+.mist{position:absolute;bottom:-18px;border-radius:50%;background:rgba(190,160,255,.16);filter:blur(16px)}
+.m1{width:46%;height:60px;left:6%}
+.m2{width:36%;height:44px;right:10%}
+.m3{width:58%;height:52px;left:24%}
+#stage.day .mist{background:rgba(255,255,255,.55)}
+.cloud{position:absolute;background:rgba(255,255,255,.92);filter:blur(5px);border-radius:50%;display:none;animation:drift linear infinite}
+#stage.day .cloud{display:block}
+.c1{width:150px;height:46px;top:76px;left:-220px;box-shadow:54px 12px 0 16px rgba(255,255,255,.88),-46px 10px 0 6px rgba(255,255,255,.85);animation-duration:48s}
+.c2{width:200px;height:56px;top:150px;left:-280px;box-shadow:70px 16px 0 20px rgba(255,255,255,.86),-60px 12px 0 8px rgba(255,255,255,.82);animation-duration:66s;animation-delay:-24s}
+.c3{width:120px;height:40px;top:230px;left:-180px;box-shadow:46px 10px 0 12px rgba(255,255,255,.85),-40px 8px 0 5px rgba(255,255,255,.8);animation-duration:54s;animation-delay:-38s}
+@keyframes drift{to{transform:translateX(1500px)}}
+.rainbow{position:absolute;top:28px;right:70px;width:230px;height:115px;z-index:1;display:none;opacity:.4;
+  background:conic-gradient(from 0deg at 50% 100%, #ff6b6b, #ffa94d, #ffd43b, #69db7c, #4dabf7, #9775fa, #ff6b6b);
+  -webkit-mask:radial-gradient(50% 100% at 50% 100%, transparent 60%, #000 63%, #000 71%, transparent 74%);
+  mask:radial-gradient(50% 100% at 50% 100%, transparent 60%, #000 63%, #000 71%, transparent 74%);
+  animation:rainPulse 7s ease-in-out infinite alternate}
+#stage.day .rainbow{display:block}
+@keyframes rainPulse{from{opacity:.28}to{opacity:.5}}
+#gourdBox{position:relative;z-index:2;transition:width .5s ease,height .5s ease}
+#gourdBox svg{display:block;width:100%;height:100%}
+#stage.day #gourdBox svg{filter:drop-shadow(0 8px 16px rgba(50,80,130,.3))}
+#gourdBox .sway{animation:sway 4.2s ease-in-out infinite alternate;transform-origin:100px -14px;transform-box:view-box}
+@keyframes sway{from{transform:rotate(-3.5deg)}to{transform:rotate(3.5deg)}}
+#gourdBox .breath{animation:breath 3.6s ease-in-out infinite alternate;transform-origin:100px 102px;transform-box:view-box}
+@keyframes breath{from{opacity:.45;transform:scale(.93)}to{opacity:1;transform:scale(1.06)}}
+#homeEntry{position:absolute;right:18px;bottom:calc(22px + env(safe-area-inset-bottom));z-index:5;width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:rgba(255,255,255,.5);font-size:15px;letter-spacing:1px}
+#homeEntry:active{background:rgba(255,255,255,.18)}
+/* 白天：毛玻璃白底深字（避免和浅色天空混在一起） */
+#page-home.day #homeEntry{background:rgba(255,255,255,.85);color:#3a3156;border:1px solid rgba(255,255,255,.95);box-shadow:0 2px 10px rgba(60,90,140,.25)}
+#page-home.day #homeEntry:active{background:#fff}
+
+/* ============ 通用：顶栏 / 卡片 / 按钮 ============ */
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top)) 14px 10px;background:var(--paper);border-bottom:1px solid var(--line)}
+.top-title{font-size:17px;font-weight:700;flex:1;text-align:center}
+.top-btns{display:flex;gap:8px}
+.icon-btn{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;color:var(--ink)}
+.back-btn{height:38px;padding:0 14px;border-radius:19px;border:1px solid var(--line);background:#fff;font-size:14px;color:var(--ink)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;margin:12px;padding:14px 16px}
+.card h3{margin:0 0 10px;font-size:15px}
+.card p{font-size:13px;color:var(--ink2);margin:6px 0;line-height:1.7}
+label{display:block;font-size:13px;color:var(--ink2);margin:10px 0 2px}
+input[type=date],input[type=number],input[type=text],input[type=time],select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:15px;background:#fff;color:var(--ink)}
+.btn-primary{background:var(--primary);color:#fff;border:none;border-radius:12px;padding:12px;font-size:15px}
+.btn-primary:active{opacity:.85}
+.btn-block{display:block;width:calc(100% - 24px);margin:12px}
+.btn-ghost{background:none;border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--ink)}
+.btn-danger{background:none;border:1px solid #f3c4c4;color:var(--minus);border-radius:12px;padding:10px 14px;font-size:14px}
+
+/* ============ 记录页 ============ */
+.stats{display:flex;justify-content:space-around;padding:12px 6px;font-size:12px;color:var(--ink2);background:#fff;border-bottom:1px solid var(--line)}
+.stats b{display:block;color:var(--ink);font-size:16px;margin-top:2px;text-align:center}
+.mnav{display:flex;align-items:center;justify-content:center;gap:2px;padding:10px 0}
+.mnav button{border:none;background:none;font-size:15px;color:var(--ink);padding:8px 12px}
+#mnLabel{font-weight:700;font-size:16px}
+#mnToday{font-size:12px;color:var(--primary)}
+#recList{padding:0 12px}
+.dayHead{display:flex;align-items:baseline;margin:16px 2px 6px;font-size:14px;font-weight:700}
+.dayHead .dsum{margin-left:auto;font-size:12px}
+.dsum.pos{color:var(--plus)}.dsum.neg{color:var(--minus)}.dsum.zero{color:var(--ink2)}
+.recRow{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.recRow .ev{flex:1;font-size:14px;line-height:1.45;word-break:break-all}
+.recRow .ph{font-size:11px;color:var(--ink2);white-space:nowrap}
+.recRow .sc{font-weight:700;white-space:nowrap}
+.sc.plus{color:var(--plus)}.sc.minus{color:var(--minus)}
+.badge{font-size:10px;background:#ffe9e0;color:#c05621;border-radius:6px;padding:1px 6px;white-space:nowrap}
+.emptyHint{text-align:center;color:var(--ink2);padding:44px 24px;font-size:14px;line-height:2.2}
+.emptyHint button{margin-top:10px}
+.warnBanner{background:#fff3e0;border:1px solid #f0d8a8;color:#9a6b2f;border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.7;margin:10px 2px}
+#fab{position:fixed;right:18px;bottom:calc(24px + env(safe-area-inset-bottom));z-index:30;width:58px;height:58px;border-radius:50%;border:none;background:var(--primary);color:#fff;font-size:30px;line-height:1;box-shadow:0 6px 18px rgba(122,95,208,.45)}
+
+/* ============ 弹层 ============ */
+.mask{position:fixed;inset:0;background:rgba(20,14,45,.55);z-index:40}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--paper);border-radius:20px 20px 0 0;padding:18px 16px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto}
+.sheet h4{margin:0 0 14px;font-size:16px;text-align:center}
+.sheet .sheetBtns{display:flex;gap:10px;margin-top:16px}
+.sheet .sheetBtns button{flex:1}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 14px;font-size:14px;color:var(--ink)}
+.chip.on{border-color:var(--primary);background:#efe9ff;color:var(--primary);font-weight:700}
+.trackNote{background:#fff8ec;border:1px solid #f0e2c0;border-radius:10px;padding:10px 12px;font-size:13px;color:#8a6a2f;margin-top:12px;line-height:1.7}
+.trackNote a{color:var(--primary);text-decoration:underline}
+.switchRow{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:12px;font-size:14px}
+.switch{position:relative;width:46px;height:26px;flex:none}
+.switch input{display:none}
+.switch i{position:absolute;inset:0;border-radius:13px;background:#d8d2e8;transition:.25s}
+.switch i::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.25s}
+.switch input:checked + i{background:var(--primary)}
+.switch input:checked + i::after{transform:translateX(20px)}
+.phThumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.phWrap{position:relative}
+.phThumb{width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block}
+.phDel{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--minus);color:#fff;border:none;font-size:11px;line-height:1}
+#toast{position:fixed;left:50%;bottom:22%;transform:translateX(-50%) translateY(10px);background:rgba(30,22,60,.92);color:#fff;padding:10px 20px;border-radius:22px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:80vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.centerBox{position:fixed;left:0;right:0;top:50%;transform:translateY(-50%);z-index:41;background:var(--paper);border-radius:18px;margin:0 32px;padding:20px}
+.centerBox h4{margin:0 0 10px;font-size:16px;text-align:center}
+.centerBox .sheetBtns{display:flex;gap:10px;margin-top:16px}
+.centerBox .sheetBtns button{flex:1}
+#modalTop .mask{z-index:60}
+#modalTop .sheet,#modalTop .centerBox{z-index:61}
+.histList{max-height:40vh;overflow-y:auto;font-size:13px}
+.histList .row{display:flex;gap:8px;padding:8px 2px;border-bottom:1px dashed var(--line);align-items:baseline}
+.histList .row .dt{color:var(--ink2);flex:none}
+.histList .row .nm{flex:1}
+.ymGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.ymGrid button{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 0;font-size:14px}
+.ymGrid button.on{border-color:var(--primary);background:#efe9ff;color:var(--primary);font-weight:700}
+.ymNav{display:flex;align-items:center;justify-content:center;gap:12px}
+.ymNav b{font-size:16px}
+
+/* ============ 事件库 ============ */
+.typeCard{background:#fff;border:1px solid var(--line);border-radius:14px;margin:12px;overflow:hidden}
+.typeHead{display:flex;align-items:center;gap:8px;padding:12px 14px;font-weight:700;font-size:15px}
+.typeHead .nm{flex:1}
+.typeHead button{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:#faf7ff;font-size:13px;color:var(--ink2)}
+.evRow{display:flex;align-items:center;gap:8px;padding:9px 14px;border-top:1px dashed var(--line);font-size:14px}
+.evRow .nm{flex:1;line-height:1.4}
+.evRow .sc{font-weight:700}
+.evRow button{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:#faf7ff;font-size:13px;color:var(--ink2)}
+.trackTag{font-size:10px;color:var(--primary);border:1px solid #d8cdf5;border-radius:6px;padding:1px 6px;white-space:nowrap}
+
+/* ============ 纪念册 ============ */
+.albumNav{display:flex;align-items:center;justify-content:center;gap:16px;padding:6px}
+.albumNav button{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:18px}
+.albumNav b{font-size:14px;color:var(--ink2)}
+.albumPage{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 16px;margin:12px;min-height:320px}
+.albumPage .apHead{font-weight:700;font-size:15px;border-bottom:2px solid var(--primary);padding-bottom:8px;margin-bottom:10px}
+.albumPage .apRow{display:flex;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:14px;align-items:baseline;flex-wrap:wrap}
+.albumPage .apRow .nm{flex:1}
+.albumPage .apNote{font-size:12px;color:var(--ink2);width:100%}
+.albumPage .apPhoto{width:120px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);margin:4px 6px 4px 0}
+.albumCover{text-align:center;padding:70px 20px}
+.albumCover .t1{font-size:26px;font-weight:700;color:var(--primary);letter-spacing:4px}
+.albumCover .t2{font-size:14px;color:var(--ink2);margin-top:18px;line-height:2.2}
+.albumCover .t3{margin-top:26px;font-size:13px;color:var(--ink2);line-height:2}
+
+/* ============ 打印 ============ */
+#printArea{display:none}
+@media print{
+  body > *:not(#printArea){display:none !important}
+  #printArea{display:block !important}
+  .printPage{page-break-after:always;background:#fff;color:#111;font-size:12px}
+  .printPage:last-child{page-break-after:auto}
+  .printPage .ppHead{font-weight:700;font-size:14px;border-bottom:2px solid #666;padding-bottom:4px;margin-bottom:8px}
+  .printPage .ppRow{display:flex;gap:8px;padding:4px 0;border-bottom:1px dotted #bbb;align-items:baseline;flex-wrap:wrap}
+  .printPage .ppNote{font-size:11px;color:#444;width:100%}
+  .printPage .ppPhoto{max-width:80mm;max-height:60mm;margin:2mm 2mm 2mm 0;border:1px solid #ccc}
+  .printCover{text-align:center;padding-top:70mm}
+  .printCover h1{font-size:32px;letter-spacing:6px;margin:0}
+  .printCover div{margin-top:10mm;font-size:14px;line-height:2.4}
+}
+@page{size:A4;margin:12mm}
+</style>
+</head>
+<body>
+
+<!-- ============ 首页 ============ -->
+<div class="page active" id="page-home">
+  <div id="stage">
+    <div class="mist m1"></div>
+    <div class="mist m2"></div>
+    <div class="mist m3"></div>
+    <div class="rainbow"></div>
+    <div class="cloud c1"></div>
+    <div class="cloud c2"></div>
+    <div class="cloud c3"></div>
+    <div id="fireflies"></div>
+    <div id="stars"></div>
+    <div id="gourdBox"></div>
+  </div>
+  <button id="homeEntry">···</button>
+</div>
+
+<!-- ============ 记录页 ============ -->
+<div class="page" id="page-records">
+  <header class="topbar">
+    <button class="icon-btn" id="btnHome" title="回到首页">🏺</button>
+    <span class="top-title">能量记录</span>
+    <span class="top-btns">
+      <button class="icon-btn" id="btnLibrary" title="事件库">🗂</button>
+      <button class="icon-btn" id="btnAlbum" title="成长纪念册">📖</button>
+      <button class="icon-btn" id="btnSettings" title="设置">⚙️</button>
+    </span>
+  </header>
+  <div class="stats">
+    <div>当前总分<b id="stTotal">0</b></div>
+    <div>等级<b id="stLevel">微小 · 1</b></div>
+    <div>历史最高<b id="stMax">0</b></div>
+  </div>
+  <div class="mnav">
+    <button id="mnPrev">◀</button>
+    <button id="mnLabel">2026年9月</button>
+    <button id="mnNext">▶</button>
+    <button id="mnToday">回到今天</button>
+  </div>
+  <div id="recList"></div>
+  <button id="fab">＋</button>
+</div>
+
+<!-- ============ 事件库 ============ -->
+<div class="page" id="page-library">
+  <header class="topbar">
+    <button class="back-btn" data-back="records">← 返回</button>
+    <span class="top-title">事件库</span>
+    <span style="width:38px"></span>
+  </header>
+  <div id="libList"></div>
+  <button class="btn-primary btn-block" id="libAddType">＋ 新建类型</button>
+  <p style="text-align:center;color:var(--ink2);font-size:12px">类型与事件随时可增删改；勾选「追踪」后记录时自动显示第几次发生</p>
+</div>
+
+<!-- ============ 纪念册 ============ -->
+<div class="page" id="page-album">
+  <header class="topbar">
+    <button class="back-btn" data-back="records">← 返回</button>
+    <span class="top-title">成长纪念册</span>
+    <span style="width:38px"></span>
+  </header>
+  <div class="card">
+    <label>起始日期<input type="date" id="alStart"></label>
+    <label>结束日期<input type="date" id="alEnd"></label>
+    <button class="btn-primary btn-block" id="alGen">生成册子</button>
+    <p>选择一段时间，把这段时间内的所有记录装订成册，可以打印出来作为成长记录收藏。</p>
+  </div>
+  <div id="alPages"></div>
+</div>
+
+<!-- ============ 设置 ============ -->
+<div class="page" id="page-settings">
+  <header class="topbar">
+    <button class="back-btn" data-back="records">← 返回</button>
+    <span class="top-title">设置</span>
+    <span style="width:38px"></span>
+  </header>
+  <div class="card">
+    <h3>昼夜背景时间</h3>
+    <label>白天开始（时）<input type="number" id="setDayStart" min="0" max="23"></label>
+    <label>白天结束（时）<input type="number" id="setDayEnd" min="0" max="23"></label>
+    <button class="btn-primary btn-block" id="setDaySave">保存</button>
+  </div>
+  <div class="card">
+    <h3>满瓶成就</h3>
+    <div id="achList"><p>还没有满瓶记录，继续加油！</p></div>
+  </div>
+  <div class="card">
+    <h3>数据同步与备份</h3>
+    <p>「导出同步文件」把本机全部记录和照片打包成一个文件；把它发到另一台设备（微信 / AirDrop）后点「合并导入同步文件」，两边记录自动合并，不会覆盖任何内容。</p>
+    <button class="btn-primary btn-block" id="btnExport">导出同步文件</button>
+    <button class="btn-ghost btn-block" id="btnMergeImport">合并导入同步文件</button>
+    <input type="file" id="mergeFile" accept=".json,application/json" style="display:none">
+    <p style="margin-top:12px">覆盖式恢复（换手机、误删数据时用，会清掉本机现有数据再恢复）：</p>
+    <button class="btn-danger btn-block" id="btnImport">从备份文件恢复（覆盖）</button>
+    <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+  </div>
+  <div class="card">
+    <h3>其他</h3>
+    <p>珠珠能量宝瓶 v1.0 · 为珠珠记录成长的能量</p>
+    <button class="btn-danger btn-block" id="btnClear">清除全部数据</button>
+  </div>
+</div>
+
+<!-- ============ 弹层容器（modalTop 是叠在 modalRoot 上方的浮层） ============ -->
+<div id="modalRoot"></div>
+<div id="modalTop"></div>
+<div id="toast"></div>
+
+<!-- ============ 打印区（纪念册） ============ -->
+<div id="printArea"></div>
+
+<script src="app-core.js"></script>
+<script src="app-pages.js"></script>
+</body>
+</html>
