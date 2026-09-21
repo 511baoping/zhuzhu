@@ -6,6 +6,23 @@ function esc(s){
   ));
 }
 
+/* ================= 补填日期记忆 ================= */
+/* 补填过以前的日期后，当天再点「＋」默认沿用该日期；改回今天或过夜后自动恢复今天 */
+const FILL_KEY = 'zzb_lastFill';
+let lastFill = (() => {
+  try{
+    const o = JSON.parse(localStorage.getItem(FILL_KEY));
+    return o && o.day === dateStr() ? o.date : null;
+  }catch(e){ return null; }
+})();
+function setLastFill(date){
+  lastFill = date;
+  try{
+    if(date) localStorage.setItem(FILL_KEY, JSON.stringify({ day: dateStr(), date }));
+    else localStorage.removeItem(FILL_KEY);
+  }catch(e){}
+}
+
 /* ================= 记录页 ================= */
 let viewYM = null;
 function navNow(){ const d = new Date(); viewYM = { y: d.getFullYear(), m: d.getMonth() + 1 }; }
@@ -117,7 +134,7 @@ function openRecPanel(rec){
   openModal(`<div class="sheet">
     <h4>${editing ? '编辑记录' : '＋ 记一笔'}</h4>
     <label>日期（可补录）</label>
-    <input type="date" id="rpDate" value="${rec ? rec.date : dateStr()}">
+    <input type="date" id="rpDate" value="${rec ? rec.date : (lastFill || dateStr())}">
     <label>类型</label>
     <div class="chips" id="rpTypes"></div>
     <div id="rpEvents"></div>
@@ -301,6 +318,7 @@ function openRecPanel(rec){
         typeId: st.typeId, typeName, eventId: st.eventId, eventName,
         doubled: st.doubled, score, photoIds: photoIds.slice(0,3), at: Date.now()
       });
+      setLastFill(date === dateStr() ? null : date); // 补填了旧日期就记住，记的是今天则恢复默认
     }
     applyRecordChange(prev);
     closeModal();
