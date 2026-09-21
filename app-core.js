@@ -1,6 +1,7 @@
 'use strict';
 /* ================= 规则常量 ================= */
-const PER_LEVEL = 35, FULL_SCORE = 980;
+/* 等级规则：微小 35 分/小级；从「小」开始 56 分/小级；满瓶 1505 */
+const PER_LEVEL = 35, PER_LEVEL_BIG = 56, FULL_SCORE = 1505;
 const BIG_LEVELS = ['微小','小','中','大','特大'];
 const RAINBOW = [
   {n:'红',h:0},{n:'橙',h:30},{n:'黄',h:58},{n:'绿',h:130},
@@ -56,11 +57,11 @@ function fmtDateCN(str){
   return `${m}月${d}日 · 周${wd}`;
 }
 
-/* 满瓶成就检查：总分跨越 980 的整数倍即记录，掉分不撤销 */
+/* 满瓶成就检查：总分跨越 1505 的整数倍即记录，掉分不撤销 */
 function checkMilestones(prevTotal, newTotal){
   for(let m = FULL_SCORE; m <= newTotal; m += FULL_SCORE){
-    if(prevTotal < m && !DB.meta.achievements.some(a=>a.n === m/FULL_SCORE)){
-      DB.meta.achievements.push({ n: m/FULL_SCORE, date: dateStr(), score: m, at: Date.now() });
+    if(prevTotal < m && !DB.meta.achievements.some(a=>a.score === m)){
+      DB.meta.achievements.push({ n: DB.meta.achievements.length + 1, date: dateStr(), score: m, at: Date.now() });
     }
   }
   if(newTotal > DB.meta.maxTotal) DB.meta.maxTotal = newTotal;
@@ -76,7 +77,13 @@ function levelInfo(total){
   if(total >= FULL_SCORE){
     return { big:'特大', sub:5, k:29, full:true, neg:false, label:'满瓶' };
   }
-  const k = Math.min(28, Math.max(1, Math.floor(total / PER_LEVEL) + 1));
+  let k;
+  if(total < PER_LEVEL * 3){               // 「微小」段：3 小级，每级 35 分
+    k = Math.floor(total / PER_LEVEL) + 1;
+  } else {                                 // 从「小」起：每级 56 分
+    k = 4 + Math.floor((total - PER_LEVEL * 3) / PER_LEVEL_BIG);
+  }
+  k = Math.min(28, Math.max(1, k));
   let big, sub;
   if(k <= 3){ big='微小'; sub=k; }
   else if(k <= 10){ big='小'; sub=k-3; }
