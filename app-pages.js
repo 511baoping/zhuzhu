@@ -1239,6 +1239,44 @@ function niceTrendStep(range){
   return Math.max(1, Math.round(step * mag));
 }
 
+/* 平滑曲线：穿过每个真实数据点，且不会冲出相邻两点的高低范围（不虚构更高的峰、更低的谷） */
+function trendCurvePath(xs, ys){
+  const n = xs.length;
+  const pt = (x, y) => `${x.toFixed(1)},${y.toFixed(1)}`;
+  if(n === 1) return `M${pt(xs[0], ys[0])}`;
+  if(n === 2) return `M${pt(xs[0], ys[0])} L${pt(xs[1], ys[1])}`;
+  const dx = [], dy = [], d = [];
+  for(let i = 0; i < n - 1; i++){
+    dx[i] = xs[i + 1] - xs[i];
+    dy[i] = ys[i + 1] - ys[i];
+    d[i] = dy[i] / dx[i];
+  }
+  const m = new Array(n);
+  /* 两端斜率：用相邻两段的加权，再限在单调范围内 */
+  m[0] = ((2 * dx[0] + dx[1]) * d[0] - dx[0] * d[1]) / (dx[0] + dx[1]);
+  if(m[0] * d[0] <= 0) m[0] = 0;
+  else if(d[0] * d[1] < 0 && Math.abs(m[0]) > Math.abs(3 * d[0])) m[0] = 3 * d[0];
+  m[n - 1] = ((2 * dx[n - 2] + dx[n - 3]) * d[n - 2] - dx[n - 2] * d[n - 3]) / (dx[n - 2] + dx[n - 3]);
+  if(m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+  else if(d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > Math.abs(3 * d[n - 2])) m[n - 1] = 3 * d[n - 2];
+  /* 中间点：相邻斜率同向才给曲率，反向（尖峰/谷底）直接压平，避免甩出去 */
+  for(let i = 1; i < n - 1; i++){
+    if(d[i - 1] * d[i] <= 0){ m[i] = 0; continue; }
+    m[i] = (d[i - 1] + d[i]) / 2;
+    const a = m[i] / d[i - 1], b = m[i] / d[i];
+    if(a * a + b * b > 9){
+      const t = 3 / Math.sqrt(a * a + b * b);
+      m[i] = t * m[i];
+    }
+  }
+  let path = `M${pt(xs[0], ys[0])}`;
+  for(let i = 0; i < n - 1; i++){
+    const h = dx[i] / 3;
+    path += ` C${pt(xs[i] + h, ys[i] + m[i] * h)} ${pt(xs[i + 1] - h, ys[i + 1] - m[i + 1] * h)} ${pt(xs[i + 1], ys[i + 1])}`;
+  }
+  return path;
+}
+
 function renderTrendChart(){
   const wrap = document.getElementById('trChart');
   const vis = trState ? trState.visible : [];
@@ -1283,10 +1321,11 @@ function renderTrendChart(){
   }
 
   vis.forEach(s => {
-    const pts = s.values.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(' ');
-    svg += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const xs = s.values.map((v, i) => xOf(i));
+    const ys = s.values.map(v => yOf(v));
+    svg += `<path d="${trendCurvePath(xs, ys)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     const i = n - 1;
-    svg += `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(s.values[i]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`;
+    svg += `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`;
   });
 
   if(direct){
