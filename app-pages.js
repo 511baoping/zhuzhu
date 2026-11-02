@@ -1100,6 +1100,15 @@ function fmtTrendVal(v){
   const r = Math.round(v * 10) / 10;
   return (r > 0 ? '+' : '') + (Number.isInteger(r) ? String(r) : r.toFixed(1));
 }
+function fmtTrendAbs(v){
+  const r = Math.round(Math.abs(v) * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}
+function trendDiffText(v, av){
+  const d = Math.round((v - av) * 10) / 10;
+  if(d === 0) return '持平';
+  return (d > 0 ? '高 ' : '低 ') + fmtTrendAbs(d);
+}
 
 function trendAddDays(d, n){ return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
 function trendMonday(d){
@@ -1207,15 +1216,15 @@ function buildTrendData(){
       values: buckets.map((b, i) => foldedKeys.reduce((s, k) => s + vals.get(k)[i], 0))
     });
   }
-  /* 平均走向：保留原始值供合计/笔数使用，曲线、提示、表格改用平均后的值；切掉前面多算的时间点 */
+  /* 原始值与平均值都保留：真实分数照常画，平均线叠在上面，方便看高出/低于平均多少 */
   series.forEach(s => {
     const full = s.values;
     s.raw = full.slice(extra);
     s.avg = trendAvgSeries(full, win).slice(extra);
-    s.values = avgOn ? s.avg : s.raw;
+    s.values = s.raw;
   });
   const visible = series.filter(s => !trHidden[s.key]);
-  const total = visible.reduce((s, x) => s + x.raw.reduce((a, b) => a + b, 0), 0);
+  const total = visible.reduce((s, x) => s + x.values.reduce((a, b) => a + b, 0), 0);
   const visRecCount = visible.reduce((a, s) => a + s.count, 0);
   return { buckets: shown, series, visible, total, visRecCount, avgOn, win };
 }
@@ -1223,6 +1232,8 @@ function buildTrendData(){
 function renderTrend(){
   const data = buildTrendData();
   trState = data;
+  /* 时间范围短到只有一个点时，平均没有意义，开关回到关闭，避免“看着是开的却怎么点都没变化” */
+  if(trAvg && !data.avgOn) trAvg = false;
   document.querySelectorAll('#trGran button').forEach(b => {
     b.classList.toggle('active', b.dataset.gran === trGran);
   });
@@ -1242,10 +1253,14 @@ function renderTrend(){
     avgBtn.classList.toggle('active', data.avgOn);
     avgBtn.setAttribute('aria-pressed', data.avgOn ? 'true' : 'false');
     avgBtn.textContent = data.avgOn ? '平均走向 开' : '看平均走向';
-    avgBtn.disabled = data.buckets.length < 2;
   }
   const title = document.getElementById('trChartTitle');
-  if(title) title.textContent = '每类分数变化' + (data.avgOn ? ' · ' + trendAvgLabel(trGran) : '');
+  if(title) title.textContent = '每类分数变化';
+  const note = document.getElementById('trAvgNote');
+  if(note){
+    note.style.display = data.avgOn ? '' : 'none';
+    note.textContent = data.avgOn ? `细线是真实分数，粗线是${trendAvgLabel(trGran)}` : '';
+  }
   renderTrendLegend();
   renderTrendChart();
   renderTrendTable();
@@ -1335,12 +1350,16 @@ function renderTrendChart(){
   const buckets = trState.buckets, n = buckets.length;
   const W = Math.max(300, wrap.clientWidth || 360);
   const H = 300;
+  const avgOn = !!trState.avgOn;
   const direct = vis.length <= 4;
-  const left = 40, right = direct ? 58 : 16, top = 14, bottom = 30;
+  const left = 40, right = direct ? (avgOn ? 96 : 58) : 16, top = 14, bottom = 30;
   const plotW = Math.max(60, W - left - right), plotH = H - top - bottom;
 
   let vmin = 0, vmax = 0;
-  vis.forEach(s => s.values.forEach(v => { if(v < vmin) vmin = v; if(v > vmax) vmax = v; }));
+  vis.forEach(s => {
+    s.values.forEach(v => { if(v < vmin) vmin = v; if(v > vmax) vmax = v; });
+    if(avgOn) s.avg.forEach(v => { if(v < vmin) vmin = v; if(v > vmax) vmax = v; });
+  });
   if(vmax === vmin) vmax = vmin + 1;
   const step = niceTrendStep(vmax - vmin);
   const yMin = Math.floor(vmin / step) * step;
@@ -1364,21 +1383,37 @@ function renderTrendChart(){
     svg += `<text x="${xOf(i).toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="10" fill="#898781">${esc(buckets[i].label)}</text>`;
   }
 
+  /* 先画真实分数（细、淡），再把平均线（粗）叠在上面 */
+  if(avgOn){
+    vis.forEach(s => {
+      const xs = s.values.map((v, i) => xOf(i));
+      const ys = s.values.map(v => yOf(v));
+      svg += `<path d="${trendCurvePath(xs, ys)}" fill="none" stroke="${s.color}" stroke-width="1.3" stroke-opacity=".32" stroke-linejoin="round" stroke-linecap="round"/>`;
+    });
+  }
   vis.forEach(s => {
-    const xs = s.values.map((v, i) => xOf(i));
-    const ys = s.values.map(v => yOf(v));
-    svg += `<path d="${trendCurvePath(xs, ys)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const line = avgOn ? s.avg : s.values;
+    const xs = line.map((v, i) => xOf(i));
+    const ys = line.map(v => yOf(v));
+    svg += `<path d="${trendCurvePath(xs, ys)}" fill="none" stroke="${s.color}" stroke-width="${avgOn ? 2.4 : 2}" stroke-linejoin="round" stroke-linecap="round"/>`;
     const i = n - 1;
     svg += `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`;
   });
 
   if(direct){
-    const labels = vis.map(s => ({ s, y: yOf(s.values[n - 1]) })).sort((a, b) => a.y - b.y);
+    const labels = vis.map(s => ({
+      s, y: yOf((avgOn ? s.avg : s.values)[n - 1])
+    })).sort((a, b) => a.y - b.y);
     let lastY = -99;
     labels.forEach(L => {
       if(L.y - lastY < 12) return;
       lastY = L.y;
-      svg += `<text x="${(xOf(n - 1) + 8).toFixed(1)}" y="${(L.y + 3.5).toFixed(1)}" font-size="10" fill="#52514e">${esc(shorten(L.s.name, 4))}</text>`;
+      let txt = shorten(L.s.name, 4);
+      if(avgOn){
+        const av = L.s.avg[n - 1];
+        txt += ' ' + trendDiffText(L.s.values[n - 1], av).replace(' ', '');
+      }
+      svg += `<text x="${(xOf(n - 1) + 8).toFixed(1)}" y="${(L.y + 3.5).toFixed(1)}" font-size="10" fill="#52514e">${esc(txt)}</text>`;
     });
   }
 
@@ -1386,7 +1421,7 @@ function renderTrendChart(){
   svg += `<g id="trHoverDots"></g>`;
   svg += `<rect id="trHit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" fill="transparent" style="cursor:crosshair"/>`;
 
-  wrap.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="各类别分数趋势图" tabindex="0">${svg}</svg>
+  wrap.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="各类别分数趋势图${avgOn ? '，细线为真实分数，粗线为平均' : ''}" tabindex="0">${svg}</svg>
     <div class="trTip" id="trTip" style="display:none"></div>`;
   trState.geom = { W, H, left, right, top, bottom, xs: buckets.map((b, i) => xOf(i)), yOf, plotW, plotH };
 
@@ -1431,18 +1466,23 @@ function showTrendTip(i){
   cross.setAttribute('x1', x.toFixed(1));
   cross.setAttribute('x2', x.toFixed(1));
   cross.style.display = '';
+  const avgOn = !!trState.avgOn;
   dots.innerHTML = vis.map(s =>
-    `<circle cx="${x.toFixed(1)}" cy="${g.yOf(s.values[i]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`
+    `<circle cx="${x.toFixed(1)}" cy="${g.yOf((avgOn ? s.avg : s.values)[i]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`
   ).join('');
-  const avgTxt = trState.avgOn
-    ? `<span class="ttAvg">${trendAvgLabel(trGran)}</span>`
-    : '';
+  const avgTxt = avgOn ? `<span class="ttAvg">${trendAvgLabel(trGran)}</span>` : '';
   tip.innerHTML = `<div class="ttDate">${esc(trState.buckets[i].full)}${avgTxt}</div>` + vis.map(s => {
-    return `<div class="ttRow"><i style="background:${s.color}"></i><b>${fmtTrendVal(s.values[i])}</b><span>${esc(s.name)}</span></div>`;
+    const v = s.values[i];
+    let tail = '';
+    if(avgOn){
+      const av = s.avg[i];
+      tail = `<em>平均 ${fmtTrendVal(av)} · ${trendDiffText(v, av)}</em>`;
+    }
+    return `<div class="ttRow"><i style="background:${s.color}"></i><b>${fmtTrendVal(v)}</b><span>${esc(s.name)}</span>${tail}</div>`;
   }).join('');
   tip.style.display = 'block';
-  const half = 74;
-  tip.style.left = Math.min(Math.max(x, half), g.W - half) + 'px';
+  const half = tip.offsetWidth / 2 || 74;
+  tip.style.left = Math.min(Math.max(x, half), Math.max(half, g.W - half)) + 'px';
 }
 
 function hideTrendTip(){
@@ -1463,12 +1503,13 @@ function renderTrendTable(){
   if(!trTableOpen || !trState) return;
   const vis = trState.visible;
   if(!vis.length){ box.innerHTML = '<div class="trHint">没有可显示的数据</div>'; return; }
-  const head = `<tr><th>${trState.avgOn ? '时间（' + trendAvgLabel(trGran) + '）' : '时间'}</th>${vis.map(s => `<th>${esc(s.name)}</th>`).join('')}<th>合计</th></tr>`;
+  const head = `<tr><th>时间</th>${vis.map(s => `<th>${esc(s.name)}</th>`).join('')}<th>合计</th></tr>`;
   const rows = trState.buckets.map((b, i) => {
     const sum = vis.reduce((a, s) => a + s.values[i], 0);
     return `<tr><th scope="row">${esc(b.full)}</th>${vis.map(s => `<td>${fmtTrendVal(s.values[i])}</td>`).join('')}<td><b>${fmtTrendVal(sum)}</b></td></tr>`;
   }).reverse().join('');
-  box.innerHTML = `<div class="trTableWrap"><table class="trTable"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  const note = trState.avgOn ? `<div class="trTableNote">表格里是真实分数；平均线看上面的图（${trendAvgLabel(trGran)}）</div>` : '';
+  box.innerHTML = note + `<div class="trTableWrap"><table class="trTable"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* ================= 事件绑定 ================= */
@@ -1487,7 +1528,13 @@ function renderTrendTable(){
     b.onclick = () => { trGran = b.dataset.gran; trSelIdx = null; renderTrend(); };
   });
   document.getElementById('trTableBtn').onclick = () => { trTableOpen = !trTableOpen; renderTrendTable(); };
-  document.getElementById('trAvgBtn').onclick = () => { trAvg = !trAvg; trSelIdx = null; renderTrend(); };
+  document.getElementById('trAvgBtn').onclick = () => {
+    if(!trState || trState.series.length === 0) return toast('这段时间还没有记录，先记一笔再看趋势');
+    if(trState.buckets.length < 2) return toast('这个时间范围只有一个点，看不出平均');
+    trAvg = !trAvg;
+    trSelIdx = null;
+    renderTrend();
+  };
   let rzTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(rzTimer);
