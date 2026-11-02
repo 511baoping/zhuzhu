@@ -5,6 +5,9 @@ function esc(s){
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
   ));
 }
+function recMult(r){ return r.mult || (r.doubled ? 2 : 1); }
+function recBadge(r){ const m = recMult(r); return m > 1 ? `<span class="badge">×${m}</span>` : ''; }
+function shorten(s, n){ s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
 
 /* ================= 补填日期记忆 ================= */
 /* 补填过以前的日期后，当天再点「＋」默认沿用该日期；改回今天或过夜后自动恢复今天 */
@@ -67,11 +70,16 @@ function renderRecords(){
     const sum = g.items.reduce((s,r) => s + r.score, 0);
     const cls = sum > 0 ? 'pos' : (sum < 0 ? 'neg' : 'zero');
     const rows = g.items.map(r => {
-      const badge = r.doubled ? '<span class="badge">加倍×2</span>' : '';
+      const badge = recBadge(r);
       const ph = (r.photoIds && r.photoIds.length) ? `<span class="ph">📷×${r.photoIds.length}</span>` : '';
-      return `<div class="recRow" data-id="${r.id}">
-        <span class="ev">${esc(r.typeName)} · ${esc(r.eventName)}${badge}</span>
-        ${ph}<span class="sc ${r.score > 0 ? 'plus' : 'minus'}">${r.score > 0 ? '+' : ''}${r.score}</span>
+      const hasDetail = !!(r.note || (r.photoIds && r.photoIds.length) || r.match);
+      const toggle = hasDetail ? `<button class="recToggle" data-id="${r.id}" aria-label="展开详情">▾</button>` : '';
+      return `<div class="recItem">
+        <div class="recRow" data-id="${r.id}">
+          <span class="ev">${esc(r.typeName)} · ${esc(r.eventName)}${badge}</span>
+          ${ph}<span class="sc ${r.score > 0 ? 'plus' : 'minus'}">${r.score > 0 ? '+' : ''}${r.score}</span>${toggle}
+        </div>
+        <div class="recDetail" id="rd-${r.id}" style="display:none"></div>
       </div>`;
     }).join('');
     return `<div class="dayHead">${fmtDateCN(g.date)}<span class="dsum ${cls}">当日 ${sum > 0 ? '+' : ''}${sum}</span></div>${rows}`;
@@ -83,6 +91,46 @@ function renderRecords(){
       if(r) openRecPanel(r);
     };
   });
+  list.querySelectorAll('.recToggle').forEach(b => {
+    b.onclick = e => { e.stopPropagation(); toggleRecDetail(b.dataset.id); };
+  });
+}
+
+/* 月记录里展开备注/照片/同类情况 */
+function toggleRecDetail(id){
+  const el = document.getElementById('rd-' + id);
+  if(!el) return;
+  const r = DB.records.find(x => x.id === id);
+  if(!r) return;
+  const btn = document.querySelector(`.recToggle[data-id="${id}"]`);
+  if(el.style.display === 'none'){
+    if(!el.dataset.loaded){
+      let html = '';
+      if(r.note) html += `<div class="dNote">${esc(r.note)}</div>`;
+      if(r.match){
+        const sim = r.match.manual ? '手动选择'
+          : (r.match.sim != null ? `文字相近 ${Math.round(r.match.sim * 100)}%` : '');
+        html += `<div class="matchRef">同类情况：${esc(r.match.date)}「${esc(r.match.note)}」${sim ? ' · ' + sim : ''}</div>`;
+      }
+      if(r.photoIds && r.photoIds.length){
+        html += `<div class="dPhotos">` + r.photoIds.map(pid =>
+          `<img class="dPhoto" data-pid="${pid}" alt="">`).join('') + `</div>`;
+      }
+      el.innerHTML = html;
+      el.dataset.loaded = '1';
+      (r.photoIds || []).forEach(pid => {
+        const img = el.querySelector(`img[data-pid="${pid}"]`);
+        if(!img) return;
+        photoUrl(pid).then(u => { if(u) img.src = u; });
+        img.onclick = () => viewPhoto(pid);
+      });
+    }
+    el.style.display = 'block';
+    if(btn) btn.textContent = '▴';
+  } else {
+    el.style.display = 'none';
+    if(btn) btn.textContent = '▾';
+  }
 }
 
 /* ================= 月份选择器 ================= */
@@ -118,13 +166,17 @@ function openMonthPicker(){
 function openRecPanel(rec){
   const editing = !!rec;
   const evNow = rec ? DB.events.find(e => e.id === rec.eventId) : null;
+  const storedMult = rec ? recMult(rec) : 1;
   const st = {
     typeId: rec ? rec.typeId : (DB.types.length ? DB.types[0].id : null),
     eventId: rec ? rec.eventId : null,
     custom: rec ? !evNow : (DB.types.length === 0),
     customName: rec && !evNow ? rec.eventName : '',
     customScore: rec && !evNow ? rec.score : 0,
-    doubled: rec ? !!rec.doubled : false,
+    mult: storedMult,
+    userMult: rec ? storedMult : null,
+    match: rec && rec.match ? { ...rec.match } : null,
+    matchManual: !!(rec && rec.match),
     photoIds: rec ? [...(rec.photoIds || [])] : [],
     newPhotoBlobs: [],   // {id, blob} 未入库的新照片
     removedPhotoIds: []  // 点保存时才真正删除
@@ -151,6 +203,32 @@ function openRecPanel(rec){
   </div>`);
 
   const evOf = () => DB.events.find(e => e.id === st.eventId);
+  const typeNameOf = () => {
+    const t = DB.types.find(x => x.id === st.typeId);
+    return t ? t.name : '';
+  };
+  function resetMatch(){
+    st.match = null;
+    st.matchManual = false;
+    st.userMult = null;
+    st.mult = 1;
+  }
+  function refreshMatch(){
+    const ev = evOf();
+    if(st.custom || !ev){ st.match = null; return; }
+    if(st.matchManual) return;
+    const dateEl = document.getElementById('rpDate');
+    const noteEl = document.getElementById('rpNote');
+    const date = dateEl ? dateEl.value : '';
+    const note = noteEl ? noteEl.value.trim() : '';
+    st.match = (date && note)
+      ? findSimilarNote(st.typeId, typeNameOf(), date, note, editing ? rec.id : null)
+      : null;
+    if(st.userMult == null) st.mult = st.match ? 2 : 1;
+  }
+
+  document.getElementById('rpDate').onchange = () => { resetMatch(); renderTrack(); };
+  document.getElementById('rpNote').oninput = () => { resetMatch(); renderTrack(); };
 
   function renderTypes(){
     const box = document.getElementById('rpTypes');
@@ -158,9 +236,15 @@ function openRecPanel(rec){
       `<button class="chip ${!st.custom && st.typeId === t.id ? 'on' : ''}" data-tid="${t.id}">${esc(t.name)}</button>`
     ).join('') + `<button class="chip ${st.custom ? 'on' : ''}" id="rpCustom">自定义</button>`;
     box.querySelectorAll('[data-tid]').forEach(b => {
-      b.onclick = () => { st.custom = false; st.typeId = b.dataset.tid; st.eventId = null; renderTypes(); renderEvents(); };
+      b.onclick = () => {
+        st.custom = false; st.typeId = b.dataset.tid; st.eventId = null;
+        resetMatch(); renderTypes(); renderEvents();
+      };
     });
-    document.getElementById('rpCustom').onclick = () => { st.custom = true; st.typeId = null; st.eventId = null; renderTypes(); renderEvents(); };
+    document.getElementById('rpCustom').onclick = () => {
+      st.custom = true; st.typeId = null; st.eventId = null;
+      resetMatch(); renderTypes(); renderEvents();
+    };
   }
 
   function renderEvents(){
@@ -186,7 +270,7 @@ function openRecPanel(rec){
           `<button class="chip ${st.eventId === e.id ? 'on' : ''}" data-eid="${e.id}">${esc(e.name)}</button>`
         ).join('') + `</div>`;
         box.querySelectorAll('[data-eid]').forEach(b => {
-          b.onclick = () => { st.eventId = b.dataset.eid; renderEvents(); };
+          b.onclick = () => { st.eventId = b.dataset.eid; resetMatch(); renderEvents(); };
         });
       }
     }
@@ -196,27 +280,81 @@ function openRecPanel(rec){
   function renderTrack(){
     const box = document.getElementById('rpTrack');
     const ev = st.custom ? null : evOf();
-    if(!ev){
-      box.innerHTML = '';
-      return;
-    }
+    if(!ev){ box.innerHTML = ''; return; }
+
+    refreshMatch();
+
     const cnt = occCount(ev.id) + (editing ? 0 : 1);
     const base = ev.score;
-    const final = base * (st.doubled ? 2 : 1);
-    let html = `<div class="switchRow">
-      <span>本次记分：<b style="color:${final > 0 ? 'var(--plus)' : 'var(--minus)'}">${final > 0 ? '+' : ''}${final}</b>
-        ${st.doubled ? '<span class="badge">加倍×2</span>' : ''}</span>
-      <span class="switch"><label style="display:block;cursor:pointer"><input type="checkbox" id="rpDouble" ${st.doubled ? 'checked' : ''}><i></i></label></span>
-    </div>`;
+    const final = base * st.mult;
+    const col = final > 0 ? 'var(--plus)' : 'var(--minus)';
+    const multBadge = st.mult > 1 ? '<span class="badge">加倍 ×2</span>' : '';
+
+    let html = '';
     if(ev.tracked){
-      html = `<div class="trackNote">「${esc(ev.name)}」这是<b>第 ${cnt} 次</b>发生
-        <a id="rpHist">查看全部历史</a><br>勾选右侧开关可<b>加倍${base > 0 ? '加分' : '扣分'}</b>（${base} → ${base * 2}）</div>` + html;
+      html += `<div class="trackNote">「${esc(ev.name)}」这是<b>第 ${cnt} 次</b>发生
+        <a id="rpHist">查看全部历史</a></div>`;
     }
+
+    html += `<div class="switchRow">
+      <span>本次记分：<b style="color:${col}">${final > 0 ? '+' : ''}${final}</b> ${multBadge}</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--ink2)">加倍</span>
+        <span class="switch"><label style="display:block;cursor:pointer"><input type="checkbox" id="rpDouble" ${st.mult > 1 ? 'checked' : ''}><i></i></label></span>
+      </span>
+    </div>`;
+
+    const dateEl = document.getElementById('rpDate');
+    const noteEl = document.getElementById('rpNote');
+    const date = dateEl ? dateEl.value : '';
+    const note = noteEl ? noteEl.value.trim() : '';
+    const recent = recentNotes(st.typeId, typeNameOf(), date, editing ? rec.id : null, 3)
+      .filter(x => !st.match || x.id !== st.match.id);
+
+    if(st.match){
+      const simTxt = st.match.manual ? '您选择的同类备注'
+        : `文字相近 ${Math.round((st.match.sim || 0) * 100)}%`;
+      html += `<div class="matchBox">
+        <div class="matchTitle">${st.match.manual ? '已选择同类情况' : '发现 10 天内相似备注'}</div>
+        <div class="matchNote">${esc(st.match.date)}「${esc(st.match.note)}」<span class="matchSim">${simTxt}</span></div>
+        <div class="matchHint">${st.mult > 1 ? '本次已按 ×2 记分' : '本次不加倍'}</div>
+      </div>`;
+    } else if(recent.length){
+      html += `<div class="matchEmpty">没有找到相似备注，按原分记。</div>`;
+    }
+
+    if(recent.length){
+      html += `<div class="recentNotes">
+        <div class="recentTitle">最近同类备注（点一条 = 同一类情况，自动 ×2）</div>
+        <div class="recentList">` + recent.map(x =>
+          `<button class="recentChip" data-rid="${x.id}">${esc(x.date.slice(5))} ${esc(shorten(x.note, 16))}</button>`
+        ).join('') + `</div>
+      </div>`;
+    }
+
     box.innerHTML = html;
     const d = document.getElementById('rpDouble');
-    if(d) d.onchange = () => { st.doubled = d.checked; renderTrack(); };
+    if(d) d.onchange = () => {
+      st.userMult = d.checked ? 2 : 1;
+      st.mult = st.userMult;
+      renderTrack();
+    };
     const h = document.getElementById('rpHist');
     if(h) h.onclick = () => openEventHistory(ev.id);
+    box.querySelectorAll('.recentChip').forEach(b => {
+      b.onclick = () => {
+        const r = DB.records.find(x => x.id === b.dataset.rid);
+        if(!r) return;
+        st.match = {
+          id: r.id, date: r.date, note: r.note,
+          sim: textSimilarity(note, r.note), manual: true
+        };
+        st.matchManual = true;
+        st.userMult = 2;
+        st.mult = 2;
+        renderTrack();
+      };
+    });
   }
 
   function renderPhotos(){
@@ -279,7 +417,7 @@ function openRecPanel(rec){
     const date = document.getElementById('rpDate').value;
     if(!date) return toast('请选择日期');
     const note = document.getElementById('rpNote').value.trim();
-    let typeName, eventName, score;
+    let typeName, eventName, score, mult = 1, matchRef = null;
     if(st.custom){
       eventName = document.getElementById('rpCName').value.trim();
       if(!eventName) return toast('请输入事件名称');
@@ -291,7 +429,11 @@ function openRecPanel(rec){
       if(!ev) return toast('请选择事件');
       typeName = DB.types.find(t => t.id === st.typeId)?.name || '';
       eventName = ev.name;
-      score = ev.score * (st.doubled ? 2 : 1);
+      mult = st.mult > 1 ? 2 : 1;
+      score = ev.score * mult;
+      matchRef = mult > 1 && st.match
+        ? { id: st.match.id, date: st.match.date, note: st.match.note, sim: st.match.sim, manual: !!st.match.manual }
+        : null;
     }
     // 保存新照片
     const newIds = [];
@@ -310,13 +452,15 @@ function openRecPanel(rec){
       rec.date = date; rec.note = note;
       rec.typeId = st.typeId; rec.typeName = typeName;
       rec.eventId = st.eventId; rec.eventName = eventName;
-      rec.doubled = st.doubled; rec.score = score;
+      rec.mult = mult; rec.doubled = mult > 1; rec.score = score;
+      rec.match = matchRef;
       rec.photoIds = photoIds.slice(0,3);
     } else {
       DB.records.push({
         id: uid(), date, note,
         typeId: st.typeId, typeName, eventId: st.eventId, eventName,
-        doubled: st.doubled, score, photoIds: photoIds.slice(0,3), at: Date.now()
+        mult, doubled: mult > 1, score, match: matchRef,
+        photoIds: photoIds.slice(0,3), at: Date.now()
       });
       setLastFill(date === dateStr() ? null : date); // 补填了旧日期就记住，记的是今天则恢复默认
     }
@@ -351,7 +495,7 @@ function openEventHistory(eventId){
     <div class="histList">
       ${rs.map(r => `<div class="row">
         <span class="dt">${r.date}</span>
-        <span class="nm">${r.doubled ? '<span class="badge">加倍×2</span> ' : ''}${esc(r.note || '')}</span>
+        <span class="nm">${recBadge(r)} ${esc(r.note || '')}</span>
         <span class="sc ${r.score > 0 ? 'plus' : 'minus'}">${r.score > 0 ? '+' : ''}${r.score}</span>
       </div>`).join('') || '<p style="color:#8f86ad;text-align:center">暂无记录</p>'}
     </div>
@@ -360,8 +504,15 @@ function openEventHistory(eventId){
   document.getElementById('hClose').onclick = closeTopModal;
 }
 
-/* ================= 事件库 ================= */
+/* ================= 事件库 / 等级库 ================= */
+let libTab = 'events';
 function renderLibrary(){
+  document.getElementById('libTitle').textContent = libTab === 'levels' ? '等级库' : '事件库';
+  document.getElementById('libTabEvents').classList.toggle('on', libTab === 'events');
+  document.getElementById('libTabLevels').classList.toggle('on', libTab === 'levels');
+  document.getElementById('libAddType').style.display = libTab === 'levels' ? 'none' : '';
+  document.getElementById('libHint').style.display = libTab === 'levels' ? 'none' : '';
+  if(libTab === 'levels'){ renderLevelLibrary(); return; }
   const list = document.getElementById('libList');
   if(DB.types.length === 0){
     list.innerHTML = `<div class="emptyHint">事件库还是空的<br>先建一个类型（如：自信、自尊、爱心）<br>再在类型下添加具体事件</div>`;
@@ -421,6 +572,127 @@ function renderLibrary(){
     }
     };
   });
+}
+
+/* ================= 等级库 ================= */
+function renderLevelLibrary(){
+  const list = document.getElementById('libList');
+  const th = levelThresholds();
+  const total = totalScore();
+  const li = levelInfo(total);
+  const steps = levelSteps();
+  const groups = [
+    { big:'微小', from:1, to:3 },
+    { big:'小', from:4, to:10 },
+    { big:'中', from:11, to:17 },
+    { big:'大', from:18, to:24 },
+    { big:'特大', from:25, to:28 }
+  ];
+  let html = `<div class="card levelNow">
+    <p>当前总分 <b>${total}</b> 分 ｜ 当前等级 <b>${total < 0 ? '微小 · 1（负分）' : li.label}</b></p>
+    <p>满瓶总分：<b>${th[28]}</b> 分</p>
+  </div>`;
+  groups.forEach(g => {
+    html += `<div class="typeCard">
+      <div class="typeHead"><span class="nm">${g.big}</span>
+        <button class="miniBtn" data-act="groupSet" data-from="${g.from}" data-to="${g.to}" data-big="${g.big}">整组统一</button>
+      </div>`;
+    for(let k = g.from; k <= g.to; k++){
+      const [big, sub] = levelNameParts(k);
+      const start = th[k - 1];
+      const step = steps[k - 1];
+      const next = k < 28 ? `升到下一级 ${step} 分` : `升到满瓶 ${step} 分`;
+      html += `<div class="evRow levelRow">
+        <span class="nm">${big} · ${sub}</span>
+        <span class="lvStart">${start} 分起</span>
+        <span class="lvStep">${next}</span>
+        <button data-act="editStep" data-idx="${k - 1}">✎</button>
+      </div>`;
+    }
+    html += `</div>`;
+  });
+  html += `<button class="btn-ghost btn-block" id="levelReset">恢复默认（微小 35，其余 56，满瓶 ${DEFAULT_FULL_SCORE}）</button>`;
+  list.innerHTML = html;
+  list.querySelectorAll('[data-act]').forEach(b => {
+    b.onclick = () => {
+      if(b.dataset.act === 'editStep') openStepForm(+b.dataset.idx);
+      else if(b.dataset.act === 'groupSet') openGroupStepForm(+b.dataset.from, +b.dataset.to, b.dataset.big);
+    };
+  });
+  document.getElementById('levelReset').onclick = () => {
+    confirmBox(`恢复默认等级分数？<br>微小 3 级每级 35 分，其余每级 56 分，满瓶 ${DEFAULT_FULL_SCORE} 分。`, () => {
+      DB.meta.levelSteps = DEFAULT_LEVEL_STEPS.slice();
+      save();
+      renderLevelLibrary();
+      renderRecords();
+      renderHome();
+      toast('已恢复默认');
+    }, '恢复');
+  };
+}
+
+function openStepForm(idx){
+  const steps = levelSteps();
+  const k = idx + 1;
+  const [big, sub] = levelNameParts(k);
+  let nextName = '满瓶';
+  if(k < 28){
+    const p = levelNameParts(k + 1);
+    nextName = `${p[0]} · ${p[1]}`;
+  }
+  openModal(`<div class="sheet">
+    <h4>修改升级分数</h4>
+    <p style="margin:0;font-size:13px;color:#8f86ad;text-align:center">${big} · ${sub} → ${nextName}</p>
+    <label>升到下一级需要多少分</label>
+    <input type="number" id="stepVal" min="1" max="99999" step="1" value="${steps[idx]}">
+    <p style="font-size:12px;color:#8f86ad;line-height:1.6">改动后，后面所有等级的起点和满瓶总分会自动重新计算。</p>
+    <div class="sheetBtns">
+      <button class="btn-ghost" id="stepCancel">取消</button>
+      <button class="btn-primary" id="stepSave">保存</button>
+    </div>
+  </div>`);
+  document.getElementById('stepCancel').onclick = closeModal;
+  document.getElementById('stepSave').onclick = () => {
+    const v = parseInt(document.getElementById('stepVal').value);
+    if(!v || v < 1) return toast('请输入大于 0 的整数');
+    if(v > 99999) return toast('分数太大了，请填 1–99999');
+    DB.meta.levelSteps[idx] = v;
+    save();
+    closeModal();
+    renderLevelLibrary();
+    renderRecords();
+    renderHome();
+    toast('已保存');
+  };
+}
+
+function openGroupStepForm(from, to, big){
+  const steps = levelSteps();
+  const first = steps[from - 1];
+  const same = steps.slice(from - 1, to).every(v => v === first);
+  openModal(`<div class="sheet">
+    <h4>${big} · 整组统一</h4>
+    <p style="margin:0;font-size:13px;color:#8f86ad;text-align:center">把这 ${to - from + 1} 个小级都改成同一个升级分数</p>
+    <label>每级需要多少分</label>
+    <input type="number" id="groupVal" min="1" max="99999" step="1" value="${same ? first : ''}" placeholder="例如 56">
+    <div class="sheetBtns">
+      <button class="btn-ghost" id="groupCancel">取消</button>
+      <button class="btn-primary" id="groupSave">保存</button>
+    </div>
+  </div>`);
+  document.getElementById('groupCancel').onclick = closeModal;
+  document.getElementById('groupSave').onclick = () => {
+    const v = parseInt(document.getElementById('groupVal').value);
+    if(!v || v < 1) return toast('请输入大于 0 的整数');
+    if(v > 99999) return toast('分数太大了，请填 1–99999');
+    for(let i = from - 1; i < to; i++) DB.meta.levelSteps[i] = v;
+    save();
+    closeModal();
+    renderLevelLibrary();
+    renderRecords();
+    renderHome();
+    toast('已保存');
+  };
 }
 
 /* 事件在所属类型内上移/下移（只影响同类型内的事件顺序） */
@@ -584,7 +856,7 @@ async function albumPageHTML(p){
         }
       }
       html += `<div class="apRow">
-        <span class="nm">${esc(r.typeName)} · ${esc(r.eventName)}${r.doubled ? ' <span class="badge">加倍×2</span>' : ''}</span>
+        <span class="nm">${esc(r.typeName)} · ${esc(r.eventName)}${recMult(r) > 1 ? ' <span class="badge">加倍×2</span>' : ''}</span>
         <span class="sc ${r.score > 0 ? 'plus' : 'minus'}">${r.score > 0 ? '+' : ''}${r.score}</span>
         ${r.note ? `<span class="apNote">备注：${esc(r.note)}</span>` : ''}
         ${imgs ? `<span class="apNote" style="width:100%">${imgs}</span>` : ''}
@@ -635,7 +907,7 @@ async function doPrintAlbum(){
             if(u) imgs += `<img class="ppPhoto" src="${u}">`;
           }
         }
-        ph += `<div class="ppRow"><span>${esc(r.typeName)} · ${esc(r.eventName)}${r.doubled ? '（加倍×2）' : ''}</span><span style="margin-left:auto">${r.score > 0 ? '+' : ''}${r.score}</span>${r.note ? `<span class="ppNote">备注：${esc(r.note)}</span>` : ''}${imgs}</div>`;
+        ph += `<div class="ppRow"><span>${esc(r.typeName)} · ${esc(r.eventName)}${recMult(r) > 1 ? '（加倍×2）' : ''}</span><span style="margin-left:auto">${r.score > 0 ? '+' : ''}${r.score}</span>${r.note ? `<span class="ppNote">备注：${esc(r.note)}</span>` : ''}${imgs}</div>`;
       }
     }
     html += `<div class="printPage">${ph}</div>`;
@@ -718,6 +990,10 @@ function mergeImportData(obj){
       DB.meta.dayStart = src.meta.dayStart;
       DB.meta.dayEnd = src.meta.dayEnd;
     }
+    /* 等级分数也属设置，以同步文件为准 */
+    if(validLevelSteps(src.meta.levelSteps)){
+      DB.meta.levelSteps = src.meta.levelSteps.slice();
+    }
     if(src.meta.photosBase64){
       if(!DB.meta.photosBase64) DB.meta.photosBase64 = {};
       for(const [id, b64] of Object.entries(src.meta.photosBase64)){
@@ -774,6 +1050,7 @@ function importBackup(file){
       confirmBox(`将用备份（${obj.exportedAt}，共 ${obj.data.records.length} 条记录）覆盖当前全部数据，确定吗？`, async () => {
         DB = obj.data;
         if(!DB.meta) DB.meta = defaultData().meta;
+        normalizeDB();
         save();
         await Photos.clear();
         thumbUrls.clear();
@@ -795,6 +1072,320 @@ function importBackup(file){
   fr.readAsText(file);
 }
 
+/* ================= 趋势页 ================= */
+const TREND_COLORS = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
+const TREND_OTHER = '#898781';
+let trGran = 'day';
+let trHidden = {};
+let trState = null;
+let trTableOpen = false;
+let trSelIdx = null;
+
+function trendAddDays(d, n){ return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+function trendMonday(d){
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+function trendCatKey(r){ return r.typeId ? 't:' + r.typeId : 'n:' + (r.typeName || '其他'); }
+function trendCatName(r){ return r.typeName || (r.typeId ? '未分类' : '自定义'); }
+
+function trendBuckets(g){
+  const out = [];
+  const today = new Date();
+  if(g === 'day'){
+    for(let i = 13; i >= 0; i--){
+      const d = trendAddDays(today, -i);
+      out.push({ key: dateStr(d), label: `${d.getMonth()+1}/${d.getDate()}`, full: `${d.getMonth()+1}月${d.getDate()}日` });
+    }
+  } else if(g === 'week'){
+    const mon = trendMonday(today);
+    for(let i = 11; i >= 0; i--){
+      const d = trendAddDays(mon, -7 * i);
+      out.push({ key: dateStr(d), label: `${d.getMonth()+1}/${d.getDate()}`, full: `${d.getMonth()+1}月${d.getDate()}日那周` });
+    }
+  } else if(g === 'month'){
+    for(let i = 11; i >= 0; i--){
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      out.push({
+        key: `${d.getFullYear()}-${pad2(d.getMonth()+1)}`,
+        label: `${d.getMonth()+1}月`,
+        full: `${d.getFullYear()}年${d.getMonth()+1}月`
+      });
+    }
+  } else {
+    let minY = today.getFullYear();
+    DB.records.forEach(r => {
+      const y = parseInt(r.date.slice(0, 4), 10);
+      if(y && y < minY) minY = y;
+    });
+    minY = Math.max(minY, today.getFullYear() - 9);
+    for(let y = minY; y <= today.getFullYear(); y++){
+      out.push({ key: String(y), label: String(y), full: `${y}年` });
+    }
+  }
+  return out;
+}
+function trendBucketKey(g, date){
+  if(g === 'day') return date;
+  if(g === 'week'){
+    const [y, m, d] = date.split('-').map(Number);
+    return dateStr(trendMonday(new Date(y, m - 1, d)));
+  }
+  if(g === 'month') return date.slice(0, 7);
+  return date.slice(0, 4);
+}
+
+function buildTrendData(){
+  const all = [];
+  const seen = new Set();
+  DB.records.forEach(r => {
+    const k = trendCatKey(r);
+    if(!seen.has(k)){ seen.add(k); all.push({ key: k, name: trendCatName(r) }); }
+  });
+  /* 稳定配色：按类别首次出现的顺序排（编号随创建时间递增），新增类别不会改变旧类别颜色 */
+  all.sort((a, b) => {
+    const ac = a.key.startsWith('n:'), bc = b.key.startsWith('n:');
+    if(ac !== bc) return ac ? 1 : -1;
+    return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+  });
+  all.forEach((c, i) => { c.color = i < 8 ? TREND_COLORS[i] : TREND_OTHER; c.fold = i >= 8; });
+
+  const buckets = trendBuckets(trGran);
+  const at = new Map(buckets.map((b, i) => [b.key, i]));
+  const vals = new Map();
+  const cnt = new Map();
+  all.forEach(c => { vals.set(c.key, buckets.map(() => 0)); cnt.set(c.key, 0); });
+  const used = new Set();
+  DB.records.forEach(r => {
+    const i = at.get(trendBucketKey(trGran, r.date));
+    if(i == null) return;
+    const k = trendCatKey(r);
+    vals.get(k)[i] += r.score;
+    cnt.set(k, cnt.get(k) + 1);
+    used.add(k);
+  });
+
+  const series = [];
+  all.forEach(c => {
+    if(c.fold || !used.has(c.key)) return;
+    series.push({ key: c.key, name: c.name, color: c.color, values: vals.get(c.key), count: cnt.get(c.key) });
+  });
+  const foldedKeys = all.filter(c => c.fold && used.has(c.key)).map(c => c.key);
+  if(foldedKeys.length){
+    series.push({
+      key: 'other', name: '其他', color: TREND_OTHER,
+      count: foldedKeys.reduce((a, k) => a + cnt.get(k), 0),
+      values: buckets.map((b, i) => foldedKeys.reduce((s, k) => s + vals.get(k)[i], 0))
+    });
+  }
+  const visible = series.filter(s => !trHidden[s.key]);
+  const total = visible.reduce((s, x) => s + x.values.reduce((a, b) => a + b, 0), 0);
+  const visRecCount = visible.reduce((a, s) => a + s.count, 0);
+  return { buckets, series, visible, total, visRecCount };
+}
+
+function renderTrend(){
+  const data = buildTrendData();
+  trState = data;
+  document.querySelectorAll('#trGran button').forEach(b => {
+    b.classList.toggle('active', b.dataset.gran === trGran);
+  });
+  const first = data.buckets[0], last = data.buckets[data.buckets.length - 1];
+  let rangeTxt;
+  if(trGran === 'day') rangeTxt = `近 14 天（${first.full} – ${last.full}）`;
+  else if(trGran === 'week') rangeTxt = `近 12 周（${first.full} – ${last.full}）`;
+  else if(trGran === 'month') rangeTxt = `近 12 个月（${first.full} – ${last.full}）`;
+  else rangeTxt = data.buckets.length > 1 ? `${first.full} – ${last.full}` : `${first.full}`;
+  const cls = data.total > 0 ? 'plus' : (data.total < 0 ? 'minus' : '');
+  document.getElementById('trSummary').innerHTML =
+    `<span>合计 <b class="${cls}">${data.total > 0 ? '+' : ''}${data.total}</b></span>
+     <span>${data.visRecCount} 笔</span>
+     <span class="trSumHint">${rangeTxt}</span>`;
+  renderTrendLegend();
+  renderTrendChart();
+  renderTrendTable();
+}
+
+function renderTrendLegend(){
+  const box = document.getElementById('trLegend');
+  if(!trState || trState.series.length < 2){
+    box.innerHTML = trState && trState.series.length === 1
+      ? '' : (trState ? `<span class="trHint">这段时间没有记录</span>` : '');
+    return;
+  }
+  box.innerHTML = trState.series.map(s => {
+    const off = !!trHidden[s.key];
+    return `<button class="trLegendItem${off ? ' off' : ''}" data-ckey="${s.key}" aria-pressed="${!off}">
+      <i style="background:${s.color}"></i><span>${esc(s.name)}</span></button>`;
+  }).join('');
+  box.querySelectorAll('.trLegendItem').forEach(b => {
+    b.onclick = () => {
+      const k = b.dataset.ckey;
+      trHidden[k] = !trHidden[k];
+      if(trHidden[k] === false) delete trHidden[k];
+      trSelIdx = null;
+      renderTrend();
+    };
+  });
+}
+
+function niceTrendStep(range){
+  if(!(range > 0)) return 1;
+  const raw = range / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const step = norm <= 1 ? 1 : (norm <= 2 ? 2 : (norm <= 5 ? 5 : 10));
+  return Math.max(1, Math.round(step * mag));
+}
+
+function renderTrendChart(){
+  const wrap = document.getElementById('trChart');
+  const vis = trState ? trState.visible : [];
+  if(!trState || trState.series.length === 0){
+    wrap.innerHTML = '<div class="trHint">还没有记录。记下第一笔后，这里会出现趋势。</div>';
+    return;
+  }
+  if(vis.length === 0){
+    wrap.innerHTML = '<div class="trHint">已全部隐藏，点上方图例重新显示。</div>';
+    return;
+  }
+  const buckets = trState.buckets, n = buckets.length;
+  const W = Math.max(300, wrap.clientWidth || 360);
+  const H = 300;
+  const direct = vis.length <= 4;
+  const left = 40, right = direct ? 58 : 16, top = 14, bottom = 30;
+  const plotW = Math.max(60, W - left - right), plotH = H - top - bottom;
+
+  let vmin = 0, vmax = 0;
+  vis.forEach(s => s.values.forEach(v => { if(v < vmin) vmin = v; if(v > vmax) vmax = v; }));
+  if(vmax === vmin) vmax = vmin + 1;
+  const step = niceTrendStep(vmax - vmin);
+  const yMin = Math.floor(vmin / step) * step;
+  const yMax = Math.ceil(vmax / step) * step;
+  const span = yMax - yMin || 1;
+  const xOf = i => n === 1 ? left + plotW / 2 : left + (plotW * i) / (n - 1);
+  const yOf = v => top + plotH * (1 - (v - yMin) / span);
+
+  let svg = '';
+  for(let v = yMin; v <= yMax + 1e-9; v += step){
+    const y = yOf(v).toFixed(1);
+    svg += `<line x1="${left}" y1="${y}" x2="${W - right}" y2="${y}" stroke="#e1e0d9" stroke-width="1" shape-rendering="crispEdges"/>`;
+    svg += `<text x="${left - 6}" y="${(+y + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#898781">${Math.round(v)}</text>`;
+  }
+  const y0 = yOf(0).toFixed(1);
+  svg += `<line x1="${left}" y1="${y0}" x2="${W - right}" y2="${y0}" stroke="#c3c2b7" stroke-width="1" shape-rendering="crispEdges"/>`;
+
+  /* 从最新一个时间点往回标，保证最后一个日期一定有刻度、且相邻刻度不挤在一起 */
+  const stride = Math.max(1, Math.ceil(n / 6));
+  for(let i = n - 1; i >= 0; i -= stride){
+    svg += `<text x="${xOf(i).toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="10" fill="#898781">${esc(buckets[i].label)}</text>`;
+  }
+
+  vis.forEach(s => {
+    const pts = s.values.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`).join(' ');
+    svg += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const i = n - 1;
+    svg += `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(s.values[i]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`;
+  });
+
+  if(direct){
+    const labels = vis.map(s => ({ s, y: yOf(s.values[n - 1]) })).sort((a, b) => a.y - b.y);
+    let lastY = -99;
+    labels.forEach(L => {
+      if(L.y - lastY < 12) return;
+      lastY = L.y;
+      svg += `<text x="${(xOf(n - 1) + 8).toFixed(1)}" y="${(L.y + 3.5).toFixed(1)}" font-size="10" fill="#52514e">${esc(shorten(L.s.name, 4))}</text>`;
+    });
+  }
+
+  svg += `<line id="trCross" x1="0" y1="${top}" x2="0" y2="${H - bottom}" stroke="#c3c2b7" stroke-width="1" style="display:none"/>`;
+  svg += `<g id="trHoverDots"></g>`;
+  svg += `<rect id="trHit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" fill="transparent" style="cursor:crosshair"/>`;
+
+  wrap.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="各类别分数趋势图" tabindex="0">${svg}</svg>
+    <div class="trTip" id="trTip" style="display:none"></div>`;
+  trState.geom = { W, H, left, right, top, bottom, xs: buckets.map((b, i) => xOf(i)), yOf, plotW, plotH };
+
+  const svgEl = wrap.querySelector('svg');
+  const tip = document.getElementById('trTip');
+  const move = clientX => {
+    const rect = svgEl.getBoundingClientRect();
+    const scale = W / rect.width;
+    const x = (clientX - rect.left) * scale;
+    let best = 0, bd = Infinity;
+    trState.geom.xs.forEach((px, i) => { const d = Math.abs(px - x); if(d < bd){ bd = d; best = i; } });
+    showTrendTip(best);
+  };
+  svgEl.onpointermove = e => move(e.clientX);
+  svgEl.onpointerdown = e => move(e.clientX);
+  svgEl.onpointerleave = () => hideTrendTip();
+  svgEl.onfocus = () => showTrendTip(trSelIdx == null ? buckets.length - 1 : trSelIdx);
+  svgEl.onblur = () => hideTrendTip();
+  svgEl.onkeydown = e => {
+    if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const base = trSelIdx == null ? buckets.length - 1 : trSelIdx;
+    trSelIdx = Math.max(0, Math.min(buckets.length - 1, base + (e.key === 'ArrowLeft' ? -1 : 1)));
+    showTrendTip(trSelIdx);
+  };
+  if(trSelIdx != null) showTrendTip(trSelIdx);
+}
+
+function showTrendTip(i){
+  if(!trState || !trState.geom) return;
+  const g = trState.geom;
+  const vis = trState.visible;
+  if(!vis.length) return;
+  trSelIdx = i;
+  const wrap = document.getElementById('trChart');
+  const svg = wrap.querySelector('svg');
+  const tip = document.getElementById('trTip');
+  const cross = document.getElementById('trCross');
+  const dots = document.getElementById('trHoverDots');
+  if(!svg || !tip || !cross || !dots) return;
+  const x = g.xs[i];
+  cross.setAttribute('x1', x.toFixed(1));
+  cross.setAttribute('x2', x.toFixed(1));
+  cross.style.display = '';
+  dots.innerHTML = vis.map(s =>
+    `<circle cx="${x.toFixed(1)}" cy="${g.yOf(s.values[i]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`
+  ).join('');
+  tip.innerHTML = `<div class="ttDate">${esc(trState.buckets[i].full)}</div>` + vis.map(s => {
+    const v = s.values[i];
+    return `<div class="ttRow"><i style="background:${s.color}"></i><b>${v > 0 ? '+' : ''}${v}</b><span>${esc(s.name)}</span></div>`;
+  }).join('');
+  tip.style.display = 'block';
+  const half = 74;
+  tip.style.left = Math.min(Math.max(x, half), g.W - half) + 'px';
+}
+
+function hideTrendTip(){
+  const tip = document.getElementById('trTip');
+  const cross = document.getElementById('trCross');
+  const dots = document.getElementById('trHoverDots');
+  if(tip) tip.style.display = 'none';
+  if(cross) cross.style.display = 'none';
+  if(dots) dots.innerHTML = '';
+}
+
+function renderTrendTable(){
+  const box = document.getElementById('trTable');
+  if(!box) return;
+  box.style.display = trTableOpen ? 'block' : 'none';
+  const btn = document.getElementById('trTableBtn');
+  if(btn) btn.textContent = trTableOpen ? '收起表格' : '看数字表格';
+  if(!trTableOpen || !trState) return;
+  const vis = trState.visible;
+  if(!vis.length){ box.innerHTML = '<div class="trHint">没有可显示的数据</div>'; return; }
+  const head = `<tr><th>时间</th>${vis.map(s => `<th>${esc(s.name)}</th>`).join('')}<th>合计</th></tr>`;
+  const rows = trState.buckets.map((b, i) => {
+    const sum = vis.reduce((a, s) => a + s.values[i], 0);
+    return `<tr><th scope="row">${esc(b.full)}</th>${vis.map(s => `<td>${s.values[i] > 0 ? '+' : ''}${s.values[i]}</td>`).join('')}<td><b>${sum > 0 ? '+' : ''}${sum}</b></td></tr>`;
+  }).reverse().join('');
+  box.innerHTML = `<div class="trTableWrap"><table class="trTable"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+
 /* ================= 事件绑定 ================= */
 (function init(){
   document.getElementById('fab').onclick = () => openRecPanel(null);
@@ -803,7 +1394,21 @@ function importBackup(file){
   document.getElementById('mnLabel').onclick = openMonthPicker;
   document.getElementById('mnToday').onclick = () => { navNow(); renderRecords(); };
   document.getElementById('btnHome').onclick = () => { showPage('home'); renderHome(); };
-  document.getElementById('btnLibrary').onclick = () => { renderLibrary(); showPage('library'); };
+  document.getElementById('btnTrend').onclick = () => { showPage('trend'); renderTrend(); };
+  document.getElementById('btnLibrary').onclick = () => { libTab = 'events'; renderLibrary(); showPage('library'); };
+  document.getElementById('libTabEvents').onclick = () => { libTab = 'events'; renderLibrary(); };
+  document.getElementById('libTabLevels').onclick = () => { libTab = 'levels'; renderLibrary(); };
+  document.querySelectorAll('#trGran button').forEach(b => {
+    b.onclick = () => { trGran = b.dataset.gran; trSelIdx = null; renderTrend(); };
+  });
+  document.getElementById('trTableBtn').onclick = () => { trTableOpen = !trTableOpen; renderTrendTable(); };
+  let rzTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(rzTimer);
+    rzTimer = setTimeout(() => {
+      if(document.getElementById('page-trend').classList.contains('active')) renderTrendChart();
+    }, 150);
+  });
   document.getElementById('btnAlbum').onclick = () => { renderAlbum(); showPage('album'); };
   document.getElementById('btnSettings').onclick = () => { renderSettings(); showPage('settings'); };
   document.getElementById('libAddType').onclick = () => openTypeForm(null);
