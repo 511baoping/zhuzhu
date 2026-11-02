@@ -2,6 +2,9 @@
 /* ================= 规则常量 ================= */
 /* 等级规则：微小 35 分/小级；从「小」开始 56 分/小级；满瓶 1505 */
 const PER_LEVEL = 35, PER_LEVEL_BIG = 56, FULL_SCORE = 1505;
+/* 默认等级分数：微小 3 级各 35 分；其余 25 级各 56 分；满瓶 1505 */
+const DEFAULT_LEVEL_STEPS = [35, 35, 35, ...Array(25).fill(56)];
+const DEFAULT_FULL_SCORE = DEFAULT_LEVEL_STEPS.reduce((a, b) => a + b, 0);
 const BIG_LEVELS = ['微小','小','中','大','特大'];
 const RAINBOW = [
   {n:'红',h:0},{n:'橙',h:30},{n:'黄',h:58},{n:'绿',h:130},
@@ -22,9 +25,21 @@ function defaultData(){
   return {
     types: [],            // {id, name}
     events: [],           // {id, typeId, name, score, tracked}
-    records: [],          // {id, date, typeId, typeName, eventId, eventName, score, doubled, note, photoIds, at}
-    meta: { dayStart: 6, dayEnd: 18, maxTotal: 0, achievements: [] } // achievements: {n, date, score, at}
+    records: [],          // {id, date, typeId, typeName, eventId, eventName, score, doubled, mult, match, note, photoIds, at}
+    meta: { dayStart: 6, dayEnd: 18, maxTotal: 0, achievements: [], levelSteps: DEFAULT_LEVEL_STEPS.slice() } // achievements: {n, date, score, at}
   };
+}
+function validLevelSteps(steps){
+  return Array.isArray(steps) && steps.length === 28 &&
+    steps.every(n => Number.isFinite(n) && n >= 1);
+}
+function normalizeDB(){
+  if(!DB.meta) DB.meta = defaultData().meta;
+  if(DB.meta.dayStart == null) DB.meta.dayStart = 6;
+  if(DB.meta.dayEnd == null) DB.meta.dayEnd = 18;
+  if(DB.meta.maxTotal == null) DB.meta.maxTotal = 0;
+  if(!Array.isArray(DB.meta.achievements)) DB.meta.achievements = [];
+  if(!validLevelSteps(DB.meta.levelSteps)) DB.meta.levelSteps = DEFAULT_LEVEL_STEPS.slice();
 }
 function load(){
   try{
@@ -36,11 +51,7 @@ function load(){
     storageOK = false;
     DB = defaultData();
   }
-  if(!DB.meta) DB.meta = defaultData().meta;
-  if(DB.meta.dayStart == null) DB.meta.dayStart = 6;
-  if(DB.meta.dayEnd == null) DB.meta.dayEnd = 18;
-  if(DB.meta.maxTotal == null) DB.meta.maxTotal = 0;
-  if(!Array.isArray(DB.meta.achievements)) DB.meta.achievements = [];
+  normalizeDB();
 }
 function save(){
   try { localStorage.setItem(DB_KEY, JSON.stringify(DB)); return true; }
@@ -57,11 +68,87 @@ function fmtDateCN(str){
   return `${m}月${d}日 · 周${wd}`;
 }
 
-/* 满瓶成就检查：总分跨越 1505 的整数倍即记录，掉分不撤销 */
+/* ================= 备注相似度（离线文字比对，不上传） ================= */
+function normNote(s){
+  return String(s || '').toLowerCase().replace(/[^一-龥a-z0-9]/g, '');
+}
+function noteBigrams(s){
+  const r = [];
+  for(let i = 0; i < s.length - 1; i++) r.push(s.slice(i, i + 2));
+  return r;
+}
+function textSimilarity(a, b){
+  const A = normNote(a), B = normNote(b);
+  if(!A || !B) return 0;
+  if(A === B) return 1;
+  const short = A.length <= B.length ? A : B;
+  const long = A.length <= B.length ? B : A;
+  if(short.length >= 3 && long.includes(short)) return 1;
+  const ga = noteBigrams(A), gb = noteBigrams(B);
+  if(!ga.length || !gb.length){
+    return (A.includes(B) || B.includes(A)) ? 1 : 0;
+  }
+  const count = {};
+  ga.forEach(g => { count[g] = (count[g] || 0) + 1; });
+  let inter = 0;
+  gb.forEach(g => { if(count[g]){ inter++; count[g]--; } });
+  return (2 * inter) / (ga.length + gb.length);
+}
+function daysAgoStr(dateSrc, days){
+  const [y, m, d] = dateSrc.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() - days);
+  return dateStr(dt);
+}
+function recTypeKey(r){
+  return r.typeId ? 't:' + r.typeId : 'n:' + (r.typeName || '');
+}
+/* 同一类型、记录日期往前 10 天，找文字相近度 >= 0.8 的备注 */
+function findSimilarNote(typeId, typeName, date, note, excludeId){
+  if(!date || !note) return null;
+  const since = daysAgoStr(date, 10);
+  const key = typeId ? 't:' + typeId : 'n:' + typeName;
+  let best = null;
+  DB.records.forEach(r => {
+    if((excludeId && r.id === excludeId) || !r.note) return;
+    if(r.date < since || r.date > date) return;
+    if(recTypeKey(r) !== key) return;
+    const sim = textSimilarity(note, r.note);
+    if(sim >= 0.8 && (!best || sim > best.sim || (sim === best.sim && r.date > best.date))){
+      best = { id: r.id, date: r.date, note: r.note, sim, manual:false };
+    }
+  });
+  return best;
+}
+/* 最近 10 天同一类型、带备注的记录（去重，按日期从新到旧） */
+function recentNotes(typeId, typeName, date, excludeId, limit){
+  if(!date) return [];
+  const since = daysAgoStr(date, 10);
+  const key = typeId ? 't:' + typeId : 'n:' + typeName;
+  const seen = new Set(), out = [];
+  DB.records.slice().sort((a, b) => {
+    if(a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return (b.at || 0) - (a.at || 0);
+  }).forEach(r => {
+    if((excludeId && r.id === excludeId) || !r.note) return;
+    if(r.date < since || r.date > date) return;
+    if(recTypeKey(r) !== key) return;
+    const n = normNote(r.note);
+    if(seen.has(n)) return;
+    seen.add(n);
+    out.push({ id:r.id, date:r.date, note:r.note });
+  });
+  return out.slice(0, limit || 3);
+}
+
+/* 满瓶成就检查：总分跨越「满瓶总分」的整数倍即记录，掉分不撤销 */
 function checkMilestones(prevTotal, newTotal){
-  for(let m = FULL_SCORE; m <= newTotal; m += FULL_SCORE){
-    if(prevTotal < m && !DB.meta.achievements.some(a=>a.score === m)){
-      DB.meta.achievements.push({ n: DB.meta.achievements.length + 1, date: dateStr(), score: m, at: Date.now() });
+  const full = fullScore();
+  if(full > 0){
+    for(let m = full; m <= newTotal; m += full){
+      if(prevTotal < m && !DB.meta.achievements.some(a=>a.score === m)){
+        DB.meta.achievements.push({ n: DB.meta.achievements.length + 1, date: dateStr(), score: m, at: Date.now() });
+      }
     }
   }
   if(newTotal > DB.meta.maxTotal) DB.meta.maxTotal = newTotal;
@@ -72,24 +159,40 @@ function applyRecordChange(prevTotal){
   save();
 }
 
-/* ================= 等级换算 ================= */
+/* ================= 等级换算（等级分数可在「等级库」里修改） ================= */
+function levelSteps(){
+  return validLevelSteps(DB && DB.meta && DB.meta.levelSteps)
+    ? DB.meta.levelSteps : DEFAULT_LEVEL_STEPS;
+}
+/* 返回 29 个累计起点：th[0]=0（第1级起点），th[28]=满瓶总分 */
+function levelThresholds(){
+  const steps = levelSteps();
+  const th = [0];
+  let sum = 0;
+  for(let i = 0; i < steps.length; i++){ sum += steps[i]; th.push(sum); }
+  return th;
+}
+function fullScore(){ return levelThresholds()[28]; }
+function levelNameParts(k){
+  if(k <= 3) return ['微小', k];
+  if(k <= 10) return ['小', k - 3];
+  if(k <= 17) return ['中', k - 10];
+  if(k <= 24) return ['大', k - 17];
+  return ['特大', k - 24];
+}
 function levelInfo(total){
-  if(total >= FULL_SCORE){
+  const th = levelThresholds();
+  const fullTotal = th[28];
+  if(total >= fullTotal){
     return { big:'特大', sub:5, k:29, full:true, neg:false, label:'满瓶' };
   }
-  let k;
-  if(total < PER_LEVEL * 3){               // 「微小」段：3 小级，每级 35 分
-    k = Math.floor(total / PER_LEVEL) + 1;
-  } else {                                 // 从「小」起：每级 56 分
-    k = 4 + Math.floor((total - PER_LEVEL * 3) / PER_LEVEL_BIG);
+  let k = 1;
+  for(let i = 1; i <= 28; i++){
+    if(total >= th[i - 1]) k = i;
+    else break;
   }
   k = Math.min(28, Math.max(1, k));
-  let big, sub;
-  if(k <= 3){ big='微小'; sub=k; }
-  else if(k <= 10){ big='小'; sub=k-3; }
-  else if(k <= 17){ big='中'; sub=k-10; }
-  else if(k <= 24){ big='大'; sub=k-17; }
-  else { big='特大'; sub=k-24; }
+  const [big, sub] = levelNameParts(k);
   return { big, sub, k, full:false, neg: total < 0, label:`${big} · ${sub}` };
 }
 
