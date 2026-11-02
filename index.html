@@ -197,14 +197,19 @@ input[type=date],input[type=number],input[type=text],input[type=time],select{wid
 .trSumRow b.minus{color:var(--minus)}
 .trSumHint{margin-left:auto;font-size:11px}
 .trendCard{background:#fff;border:1px solid var(--line);border-radius:14px;margin:10px 12px;padding:8px 6px 6px;position:relative}
-.trendHead{display:flex;align-items:center;justify-content:space-between;padding:0 6px 2px}
+.trendHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 6px 2px}
 .trendHead span{font-size:13px;color:var(--ink2)}
+.trendHeadBtns{display:flex;gap:6px;flex-shrink:0}
 .trTableBtn{border:1px solid var(--line);background:#fff;border-radius:14px;padding:5px 10px;font-size:12px;color:var(--primary)}
+.trAvgBtn{border:1px solid var(--line);background:#fff;border-radius:14px;padding:5px 10px;font-size:12px;color:var(--primary)}
+.trAvgBtn.active{background:#efe9ff;border-color:var(--primary);font-weight:700}
+.trAvgBtn:disabled{opacity:.45}
 .trChart{position:relative;width:100%;overflow:hidden}
 .trChart svg{display:block}
 .trChart svg:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
 .trTip{position:absolute;top:8px;transform:translateX(-50%);background:rgba(30,22,60,.94);color:#fff;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.6;min-width:128px;max-width:210px;pointer-events:none;z-index:5}
 .trTip .ttDate{font-weight:700;margin-bottom:4px}
+.trTip .ttAvg{display:block;font-weight:400;font-size:11px;color:#898781;margin-top:2px}
 .trTip .ttRow{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .trTip .ttRow i{width:12px;height:2px;border-radius:1px;flex:none}
 .trTip .ttRow b{font-weight:700}
@@ -334,7 +339,7 @@ input[type=date],input[type=number],input[type=text],input[type=time],select{wid
   </div>
   <div class="trSumRow" id="trSummary"></div>
   <div class="trendCard">
-    <div class="trendHead"><span>每类分数变化</span><button class="trTableBtn" id="trTableBtn">看数字表格</button></div>
+    <div class="trendHead"><span id="trChartTitle">每类分数变化</span><div class="trendHeadBtns"><button class="trAvgBtn" id="trAvgBtn" aria-pressed="false">看平均走向</button><button class="trTableBtn" id="trTableBtn">看数字表格</button></div></div>
     <div class="trChart" id="trChart"></div>
     <div class="trLegend" id="trLegend"></div>
   </div>
@@ -387,7 +392,7 @@ input[type=date],input[type=number],input[type=text],input[type=time],select{wid
   </div>
   <div class="card">
     <h3>其他</h3>
-    <p>珠珠能量宝瓶 v1.2 · 2026-11-02 · 为珠珠记录成长的能量</p>
+    <p>珠珠能量宝瓶 v1.3 · 2026-11-02 · 为珠珠记录成长的能量</p>
     <button class="btn-danger btn-block" id="btnClear">清除全部数据</button>
   </div>
 </div>
