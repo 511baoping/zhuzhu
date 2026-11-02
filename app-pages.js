@@ -1435,7 +1435,7 @@ function showTrendTip(i){
     `<circle cx="${x.toFixed(1)}" cy="${g.yOf(s.values[i]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`
   ).join('');
   const avgTxt = trState.avgOn
-    ? `<span class="ttAvg">近 ${Math.min(trState.win, i + 1)} ${trendAvgUnit(trGran)}平均</span>`
+    ? `<span class="ttAvg">${trendAvgLabel(trGran)}</span>`
     : '';
   tip.innerHTML = `<div class="ttDate">${esc(trState.buckets[i].full)}${avgTxt}</div>` + vis.map(s => {
     return `<div class="ttRow"><i style="background:${s.color}"></i><b>${fmtTrendVal(s.values[i])}</b><span>${esc(s.name)}</span></div>`;
