@@ -1,5 +1,5 @@
 /* 珠珠能量宝瓶 · 离线缓存 */
-const CACHE = 'zzb-v2';
+const CACHE = 'zzb-v3';
 const ASSETS = [
   './',
   './index.html',
