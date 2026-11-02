@@ -1080,6 +1080,26 @@ let trHidden = {};
 let trState = null;
 let trTableOpen = false;
 let trSelIdx = null;
+let trAvg = false;
+
+/* 平均走向：日看近 7 天、周看近 4 周、月看近 3 个月、年看近 3 年 */
+function trendAvgWindow(g){ return g === 'day' ? 7 : (g === 'week' ? 4 : 3); }
+function trendAvgUnit(g){ return g === 'day' ? '天' : (g === 'week' ? '周' : (g === 'month' ? '个月' : '年')); }
+function trendAvgLabel(g){ return `近 ${trendAvgWindow(g)} ${trendAvgUnit(g)}平均`; }
+function trendAvgSeries(values, win){
+  const out = [];
+  let sum = 0;
+  for(let i = 0; i < values.length; i++){
+    sum += values[i];
+    if(i >= win) sum -= values[i - win];
+    out.push(sum / Math.min(i + 1, win));
+  }
+  return out;
+}
+function fmtTrendVal(v){
+  const r = Math.round(v * 10) / 10;
+  return (r > 0 ? '+' : '') + (Number.isInteger(r) ? String(r) : r.toFixed(1));
+}
 
 function trendAddDays(d, n){ return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
 function trendMonday(d){
@@ -1090,22 +1110,24 @@ function trendMonday(d){
 function trendCatKey(r){ return r.typeId ? 't:' + r.typeId : 'n:' + (r.typeName || '其他'); }
 function trendCatName(r){ return r.typeName || (r.typeId ? '未分类' : '自定义'); }
 
-function trendBuckets(g){
+/* extra：为了算满第一个点的平均，往前多看几个时间点，算完再切掉 */
+function trendBuckets(g, extra){
   const out = [];
   const today = new Date();
+  const ex = extra || 0;
   if(g === 'day'){
-    for(let i = 13; i >= 0; i--){
+    for(let i = 13 + ex; i >= 0; i--){
       const d = trendAddDays(today, -i);
       out.push({ key: dateStr(d), label: `${d.getMonth()+1}/${d.getDate()}`, full: `${d.getMonth()+1}月${d.getDate()}日` });
     }
   } else if(g === 'week'){
     const mon = trendMonday(today);
-    for(let i = 11; i >= 0; i--){
+    for(let i = 11 + ex; i >= 0; i--){
       const d = trendAddDays(mon, -7 * i);
       out.push({ key: dateStr(d), label: `${d.getMonth()+1}/${d.getDate()}`, full: `${d.getMonth()+1}月${d.getDate()}日那周` });
     }
   } else if(g === 'month'){
-    for(let i = 11; i >= 0; i--){
+    for(let i = 11 + ex; i >= 0; i--){
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       out.push({
         key: `${d.getFullYear()}-${pad2(d.getMonth()+1)}`,
@@ -1120,7 +1142,7 @@ function trendBuckets(g){
       if(y && y < minY) minY = y;
     });
     minY = Math.max(minY, today.getFullYear() - 9);
-    for(let y = minY; y <= today.getFullYear(); y++){
+    for(let y = minY - ex; y <= today.getFullYear(); y++){
       out.push({ key: String(y), label: String(y), full: `${y}年` });
     }
   }
@@ -1151,7 +1173,12 @@ function buildTrendData(){
   });
   all.forEach((c, i) => { c.color = i < 8 ? TREND_COLORS[i] : TREND_OTHER; c.fold = i >= 8; });
 
-  const buckets = trendBuckets(trGran);
+  const shown = trendBuckets(trGran);
+  const win = trendAvgWindow(trGran);
+  const avgOn = trAvg && shown.length > 1;
+  /* 往前多看 win-1 个时间点再算平均，保证第一个点也是完整窗口的平均，不会因为样本少而冒出假尖峰 */
+  const extra = avgOn ? win - 1 : 0;
+  const buckets = extra ? trendBuckets(trGran, extra) : shown;
   const at = new Map(buckets.map((b, i) => [b.key, i]));
   const vals = new Map();
   const cnt = new Map();
@@ -1162,6 +1189,7 @@ function buildTrendData(){
     if(i == null) return;
     const k = trendCatKey(r);
     vals.get(k)[i] += r.score;
+    if(i < extra) return; /* 更早的记录只用于算平均，不算进这段时间的合计和笔数 */
     cnt.set(k, cnt.get(k) + 1);
     used.add(k);
   });
@@ -1179,10 +1207,17 @@ function buildTrendData(){
       values: buckets.map((b, i) => foldedKeys.reduce((s, k) => s + vals.get(k)[i], 0))
     });
   }
+  /* 平均走向：保留原始值供合计/笔数使用，曲线、提示、表格改用平均后的值；切掉前面多算的时间点 */
+  series.forEach(s => {
+    const full = s.values;
+    s.raw = full.slice(extra);
+    s.avg = trendAvgSeries(full, win).slice(extra);
+    s.values = avgOn ? s.avg : s.raw;
+  });
   const visible = series.filter(s => !trHidden[s.key]);
-  const total = visible.reduce((s, x) => s + x.values.reduce((a, b) => a + b, 0), 0);
+  const total = visible.reduce((s, x) => s + x.raw.reduce((a, b) => a + b, 0), 0);
   const visRecCount = visible.reduce((a, s) => a + s.count, 0);
-  return { buckets, series, visible, total, visRecCount };
+  return { buckets: shown, series, visible, total, visRecCount, avgOn, win };
 }
 
 function renderTrend(){
@@ -1202,6 +1237,15 @@ function renderTrend(){
     `<span>合计 <b class="${cls}">${data.total > 0 ? '+' : ''}${data.total}</b></span>
      <span>${data.visRecCount} 笔</span>
      <span class="trSumHint">${rangeTxt}</span>`;
+  const avgBtn = document.getElementById('trAvgBtn');
+  if(avgBtn){
+    avgBtn.classList.toggle('active', data.avgOn);
+    avgBtn.setAttribute('aria-pressed', data.avgOn ? 'true' : 'false');
+    avgBtn.textContent = data.avgOn ? '平均走向 开' : '看平均走向';
+    avgBtn.disabled = data.buckets.length < 2;
+  }
+  const title = document.getElementById('trChartTitle');
+  if(title) title.textContent = '每类分数变化' + (data.avgOn ? ' · ' + trendAvgLabel(trGran) : '');
   renderTrendLegend();
   renderTrendChart();
   renderTrendTable();
@@ -1390,9 +1434,11 @@ function showTrendTip(i){
   dots.innerHTML = vis.map(s =>
     `<circle cx="${x.toFixed(1)}" cy="${g.yOf(s.values[i]).toFixed(1)}" r="4.5" fill="${s.color}" stroke="#ffffff" stroke-width="2"/>`
   ).join('');
-  tip.innerHTML = `<div class="ttDate">${esc(trState.buckets[i].full)}</div>` + vis.map(s => {
-    const v = s.values[i];
-    return `<div class="ttRow"><i style="background:${s.color}"></i><b>${v > 0 ? '+' : ''}${v}</b><span>${esc(s.name)}</span></div>`;
+  const avgTxt = trState.avgOn
+    ? `<span class="ttAvg">近 ${Math.min(trState.win, i + 1)} ${trendAvgUnit(trGran)}平均</span>`
+    : '';
+  tip.innerHTML = `<div class="ttDate">${esc(trState.buckets[i].full)}${avgTxt}</div>` + vis.map(s => {
+    return `<div class="ttRow"><i style="background:${s.color}"></i><b>${fmtTrendVal(s.values[i])}</b><span>${esc(s.name)}</span></div>`;
   }).join('');
   tip.style.display = 'block';
   const half = 74;
@@ -1417,10 +1463,10 @@ function renderTrendTable(){
   if(!trTableOpen || !trState) return;
   const vis = trState.visible;
   if(!vis.length){ box.innerHTML = '<div class="trHint">没有可显示的数据</div>'; return; }
-  const head = `<tr><th>时间</th>${vis.map(s => `<th>${esc(s.name)}</th>`).join('')}<th>合计</th></tr>`;
+  const head = `<tr><th>${trState.avgOn ? '时间（' + trendAvgLabel(trGran) + '）' : '时间'}</th>${vis.map(s => `<th>${esc(s.name)}</th>`).join('')}<th>合计</th></tr>`;
   const rows = trState.buckets.map((b, i) => {
     const sum = vis.reduce((a, s) => a + s.values[i], 0);
-    return `<tr><th scope="row">${esc(b.full)}</th>${vis.map(s => `<td>${s.values[i] > 0 ? '+' : ''}${s.values[i]}</td>`).join('')}<td><b>${sum > 0 ? '+' : ''}${sum}</b></td></tr>`;
+    return `<tr><th scope="row">${esc(b.full)}</th>${vis.map(s => `<td>${fmtTrendVal(s.values[i])}</td>`).join('')}<td><b>${fmtTrendVal(sum)}</b></td></tr>`;
   }).reverse().join('');
   box.innerHTML = `<div class="trTableWrap"><table class="trTable"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -1441,6 +1487,7 @@ function renderTrendTable(){
     b.onclick = () => { trGran = b.dataset.gran; trSelIdx = null; renderTrend(); };
   });
   document.getElementById('trTableBtn').onclick = () => { trTableOpen = !trTableOpen; renderTrendTable(); };
+  document.getElementById('trAvgBtn').onclick = () => { trAvg = !trAvg; trSelIdx = null; renderTrend(); };
   let rzTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(rzTimer);
