@@ -156,6 +156,73 @@ input[type=date],input[type=number],input[type=text],input[type=time],select{wid
 .evRow .sc{font-weight:700}
 .evRow button{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:#faf7ff;font-size:13px;color:var(--ink2)}
 .trackTag{font-size:10px;color:var(--primary);border:1px solid #d8cdf5;border-radius:6px;padding:1px 6px;white-space:nowrap}
+.libTabs{display:flex;gap:8px;padding:12px 12px 0}
+.libTabs button{flex:1;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 0;font-size:14px;color:var(--ink2)}
+.libTabs button.on{border-color:var(--primary);background:#efe9ff;color:var(--primary);font-weight:700}
+.miniBtn{width:auto !important;padding:0 12px;border-radius:14px !important;font-size:12px !important;color:var(--primary) !important;height:28px !important}
+.levelNow p{margin:4px 0}
+.levelRow .nm{flex:none;width:84px;font-weight:700}
+.levelRow .lvStart{font-size:12px;color:var(--ink2);white-space:nowrap}
+.levelRow .lvStep{flex:1;text-align:right;font-size:12px;color:var(--ink2);white-space:nowrap;padding-right:2px}
+
+/* ============ 月记录：展开备注 / 同类情况 / 照片 ============ */
+.recItem{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden}
+.recItem .recRow{border:none;border-radius:0;margin-bottom:0;background:none}
+.recToggle{border:none;background:none;font-size:13px;color:var(--ink2);padding:2px 4px;flex:none;width:24px}
+.recDetail{padding:0 12px 10px;border-top:1px dashed var(--line);background:#fdfbff}
+.dNote{font-size:13px;color:var(--ink);line-height:1.7;padding-top:8px;white-space:pre-wrap;word-break:break-word}
+.matchRef{font-size:12px;color:#8a6a2f;background:#fff8ec;border:1px solid #f0e2c0;border-radius:8px;padding:6px 8px;margin-top:8px;line-height:1.6;word-break:break-word}
+.dPhotos{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.dPhoto{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#eee;display:block}
+
+/* ============ 记录面板：相似备注 ============ */
+.matchBox{margin-top:10px;background:#fff8ec;border:1px solid #f0e2c0;border-radius:10px;padding:10px 12px}
+.matchTitle{font-size:13px;font-weight:700;color:#8a6a2f}
+.matchNote{font-size:12px;color:var(--ink);line-height:1.7;margin-top:4px;word-break:break-word}
+.matchSim{color:var(--ink2);margin-left:6px;white-space:nowrap}
+.matchHint{font-size:12px;color:var(--primary);margin-top:4px}
+.matchEmpty{font-size:12px;color:var(--ink2);margin-top:8px}
+.recentNotes{margin-top:10px}
+.recentTitle{font-size:12px;color:var(--ink2);margin-bottom:6px;line-height:1.5}
+.recentList{display:flex;flex-wrap:wrap;gap:6px}
+.recentChip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:6px 10px;font-size:12px;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ============ 趋势 ============ */
+.trGran{display:flex;gap:6px;padding:10px 12px 0}
+.trGran button{flex:1;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 0;font-size:14px;color:var(--ink2)}
+.trGran button.active{border-color:var(--primary);background:#efe9ff;color:var(--primary);font-weight:700}
+.trSumRow{display:flex;align-items:baseline;gap:10px;padding:10px 14px 2px;font-size:13px;color:var(--ink2);flex-wrap:wrap}
+.trSumRow b{color:var(--ink);font-size:16px}
+.trSumRow b.plus{color:var(--plus)}
+.trSumRow b.minus{color:var(--minus)}
+.trSumHint{margin-left:auto;font-size:11px}
+.trendCard{background:#fff;border:1px solid var(--line);border-radius:14px;margin:10px 12px;padding:8px 6px 6px;position:relative}
+.trendHead{display:flex;align-items:center;justify-content:space-between;padding:0 6px 2px}
+.trendHead span{font-size:13px;color:var(--ink2)}
+.trTableBtn{border:1px solid var(--line);background:#fff;border-radius:14px;padding:5px 10px;font-size:12px;color:var(--primary)}
+.trChart{position:relative;width:100%;overflow:hidden}
+.trChart svg{display:block}
+.trChart svg:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
+.trTip{position:absolute;top:8px;transform:translateX(-50%);background:rgba(30,22,60,.94);color:#fff;border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.6;min-width:128px;max-width:210px;pointer-events:none;z-index:5}
+.trTip .ttDate{font-weight:700;margin-bottom:4px}
+.trTip .ttRow{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.trTip .ttRow i{width:12px;height:2px;border-radius:1px;flex:none}
+.trTip .ttRow b{font-weight:700}
+.trTip .ttRow span{color:rgba(255,255,255,.72);overflow:hidden;text-overflow:ellipsis}
+.trLegend{display:flex;flex-wrap:wrap;gap:2px 12px;padding:6px 10px 4px}
+.trLegendItem{display:flex;align-items:center;gap:6px;border:none;background:none;padding:4px 2px;font-size:12px;color:var(--ink)}
+.trLegendItem i{width:16px;height:2px;border-radius:1px;flex:none}
+.trLegendItem.off{color:var(--ink2);opacity:.6}
+.trLegendItem.off i{background:#c3c2b7 !important}
+.trLegendItem.off span{text-decoration:line-through}
+.trHint{padding:24px 16px;text-align:center;color:var(--ink2);font-size:13px;line-height:1.7}
+.trFoot{padding:0 16px 20px;text-align:center;color:var(--ink2);font-size:11px;line-height:1.7}
+.trTableWrap{overflow-x:auto;padding:4px 8px 10px}
+.trTable{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+.trTable th,.trTable td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.trTable thead th{color:var(--ink2);font-weight:600;background:#fff}
+.trTable tbody th{text-align:left;font-weight:400;color:var(--ink2)}
+.trTable td b{font-weight:700}
 
 /* ============ 纪念册 ============ */
 .albumNav{display:flex;align-items:center;justify-content:center;gap:16px;padding:6px}
@@ -215,6 +282,7 @@ input[type=date],input[type=number],input[type=text],input[type=time],select{wid
     <button class="icon-btn" id="btnHome" title="回到首页">🏺</button>
     <span class="top-title">能量记录</span>
     <span class="top-btns">
+      <button class="icon-btn" id="btnTrend" title="趋势">📈</button>
       <button class="icon-btn" id="btnLibrary" title="事件库">🗂</button>
       <button class="icon-btn" id="btnAlbum" title="成长纪念册">📖</button>
       <button class="icon-btn" id="btnSettings" title="设置">⚙️</button>
@@ -235,16 +303,43 @@ input[type=date],input[type=number],input[type=text],input[type=time],select{wid
   <button id="fab">＋</button>
 </div>
 
-<!-- ============ 事件库 ============ -->
+<!-- ============ 事件库 / 等级库 ============ -->
 <div class="page" id="page-library">
   <header class="topbar">
     <button class="back-btn" data-back="records">← 返回</button>
-    <span class="top-title">事件库</span>
+    <span class="top-title" id="libTitle">事件库</span>
     <span style="width:38px"></span>
   </header>
+  <div class="libTabs">
+    <button id="libTabEvents" class="on">事件库</button>
+    <button id="libTabLevels">等级库</button>
+  </div>
   <div id="libList"></div>
   <button class="btn-primary btn-block" id="libAddType">＋ 新建类型</button>
-  <p style="text-align:center;color:var(--ink2);font-size:12px">类型与事件随时可增删改；勾选「追踪」后记录时自动显示第几次发生</p>
+  <p id="libHint" style="text-align:center;color:var(--ink2);font-size:12px">类型与事件随时可增删改；勾选「追踪」后记录时自动显示第几次发生</p>
+</div>
+
+<!-- ============ 趋势 ============ -->
+<div class="page" id="page-trend">
+  <header class="topbar">
+    <button class="back-btn" data-back="records">← 返回</button>
+    <span class="top-title">趋势</span>
+    <span style="width:38px"></span>
+  </header>
+  <div class="trGran" id="trGran">
+    <button data-gran="day" class="active">按日</button>
+    <button data-gran="week">按周</button>
+    <button data-gran="month">按月</button>
+    <button data-gran="year">按年</button>
+  </div>
+  <div class="trSumRow" id="trSummary"></div>
+  <div class="trendCard">
+    <div class="trendHead"><span>每类分数变化</span><button class="trTableBtn" id="trTableBtn">看数字表格</button></div>
+    <div class="trChart" id="trChart"></div>
+    <div class="trLegend" id="trLegend"></div>
+  </div>
+  <div id="trTable"></div>
+  <p class="trFoot">点图例可显示或隐藏某一类；在图上左右滑动查看每个时间点的数字。</p>
 </div>
 
 <!-- ============ 纪念册 ============ -->
@@ -292,7 +387,7 @@ input[type=date],input[type=number],input[type=text],input[type=time],select{wid
   </div>
   <div class="card">
     <h3>其他</h3>
-    <p>珠珠能量宝瓶 v1.1 · 2026-09-22 · 为珠珠记录成长的能量</p>
+    <p>珠珠能量宝瓶 v1.2 · 2026-11-02 · 为珠珠记录成长的能量</p>
     <button class="btn-danger btn-block" id="btnClear">清除全部数据</button>
   </div>
 </div>
